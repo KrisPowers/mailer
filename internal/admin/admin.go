@@ -1,0 +1,602 @@
+// Package admin serves the local web UI used to set up and manage the
+// server. It listens on loopback only.
+package admin
+
+import (
+	"bufio"
+	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"net"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"mailer/internal/cloudflare"
+	"mailer/internal/config"
+	"mailer/internal/logbuf"
+	"mailer/internal/mta"
+	"mailer/internal/queue"
+	"mailer/internal/store"
+	"mailer/internal/tailscale"
+	"mailer/internal/tunnel"
+	"mailer/internal/users"
+)
+
+//go:embed web
+var webFS embed.FS
+
+type Server struct {
+	Cfg    *config.Manager
+	Users  *users.DB
+	Store  *store.Store
+	Queue  *queue.Queue
+	MTA    *mta.MTA
+	Setup  *cloudflare.Setup
+	Tunnel *tunnel.Runner
+	Logs   *logbuf.Buffer
+	Log    *log.Logger
+
+	mu     sync.Mutex
+	checks *Checks
+}
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	web, _ := fs.Sub(webFS, "web")
+	mux.Handle("GET /", http.FileServerFS(web))
+
+	mux.HandleFunc("GET /api/overview", s.overview)
+	mux.HandleFunc("POST /api/check", s.runChecksNow)
+	mux.HandleFunc("POST /api/cloudflare/connect", s.cloudflareConnect)
+	mux.HandleFunc("POST /api/tailscale/enable", s.tailscaleEnable)
+	mux.HandleFunc("GET /api/accounts", s.listAccounts)
+	mux.HandleFunc("POST /api/accounts", s.createAccount)
+	mux.HandleFunc("POST /api/accounts/password", s.resetPassword)
+	mux.HandleFunc("POST /api/accounts/delete", s.deleteAccount)
+	mux.HandleFunc("GET /api/aliases", s.getAliases)
+	mux.HandleFunc("PUT /api/aliases", s.putAliases)
+	mux.HandleFunc("GET /api/queue", s.getQueue)
+	mux.HandleFunc("POST /api/queue/retry", s.retryQueue)
+	mux.HandleFunc("GET /api/logs", s.getLogs)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	return s.guard(mux)
+}
+
+// guard rejects requests that didn't come from a page on this machine:
+// the Host header must be a loopback name (defeats DNS rebinding), and
+// state-changing requests must carry a custom header, which other sites
+// can't send cross-origin.
+func (s *Server) guard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" && host != "[::1]" {
+			http.Error(w, "forbidden host", http.StatusForbidden)
+			return
+		}
+		if r.Method != http.MethodGet && r.Header.Get("X-Mailer") != "1" {
+			http.Error(w, "missing X-Mailer header", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'")
+		w.Header().Set("Cache-Control", "no-store")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func writeErr(w http.ResponseWriter, code int, err error) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+}
+
+func readJSON(r *http.Request, v any) error {
+	return json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(v)
+}
+
+// ---- checks ----
+
+type Check struct {
+	Name   string `json:"name"`
+	OK     bool   `json:"ok"`
+	Detail string `json:"detail"`
+}
+
+type Checks struct {
+	At         time.Time         `json:"at"`
+	Cloudflare cloudflare.Status `json:"cloudflare"`
+	Tailscale  tailscale.Status  `json:"tailscale"`
+	Tunnel     tunnel.Status     `json:"tunnel"`
+	Items      []Check           `json:"items"`
+}
+
+// RunChecks refreshes the connection checks every minute.
+func (s *Server) RunChecks(ctx context.Context) {
+	for {
+		s.refresh(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Minute):
+		}
+	}
+}
+
+func (s *Server) refresh(ctx context.Context) *Checks {
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	cfg := s.Cfg.Get()
+	c := &Checks{At: time.Now()}
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		c.Cloudflare = s.Setup.CheckStatus(ctx, probeHealth)
+	}()
+	go func() {
+		defer wg.Done()
+		c.Tailscale = tailscale.GetStatus(ctx, cfg.Ports.IMAP, cfg.Ports.Submission)
+	}()
+	var port25 error
+	go func() {
+		defer wg.Done()
+		port25 = probeSMTP(ctx, "gmail-smtp-in.l.google.com:25")
+	}()
+	wg.Wait()
+	c.Tunnel = s.Tunnel.Status()
+
+	cf := c.Cloudflare
+	add := func(name string, ok bool, detail string) { c.Items = append(c.Items, Check{name, ok, detail}) }
+	if !cf.Connected {
+		add("Cloudflare", false, "Not connected yet")
+	} else {
+		tunnelDetail := "not reporting"
+		if cf.TunnelStatus != "" {
+			tunnelDetail = fmt.Sprintf("%s · %d connection(s)", cf.TunnelStatus, cf.TunnelConns)
+		}
+		add("Cloudflare tunnel", cf.TunnelStatus == "healthy", tunnelDetail)
+		routingDetail := "ready · all mail goes to the Worker"
+		if cf.EmailRouting != "ready" || !cf.CatchAllOK {
+			catchAll := "catch-all not pointing at the Worker"
+			if cf.CatchAllOK {
+				catchAll = "catch-all OK"
+			}
+			routingDetail = fmt.Sprintf("status %s · %s", orDash(cf.EmailRouting), catchAll)
+		}
+		add("Email Routing", cf.EmailRouting == "ready" && cf.CatchAllOK, routingDetail)
+		inboundDetail := "reachable from the internet"
+		if !cf.PublicHealthy {
+			inboundDetail = cfg.Cloudflare.InboundHost + " not reachable"
+		}
+		add("Inbound path", cf.PublicHealthy, inboundDetail)
+	}
+	ts := c.Tailscale
+	switch {
+	case !ts.Installed:
+		add("Tailscale", false, "Not installed")
+	case !ts.Running:
+		add("Tailscale", false, "Not signed in ("+orDash(ts.State)+")")
+	default:
+		add("Tailscale", true, ts.DNSName)
+		add("Funnel: reading mail (IMAP :443)", ts.FunnelIMAP, ts.DNSName+":443")
+		add("Funnel: sending mail (SMTP :8443)", ts.FunnelSubmission, ts.DNSName+":8443")
+		if ts.FunnelIMAP {
+			err := probeIMAP(ctx, ts.DNSName+":443")
+			add("IMAP answers over Funnel", err == nil, errText(err, "greeting received"))
+		}
+	}
+	add("Outbound port 25 (sending replies)", port25 == nil,
+		errText(port25, "your ISP allows outbound mail"))
+	if t := s.MTA.LastInbound(); !t.IsZero() {
+		add("Last message received", true, t.Format("Jan 2 15:04"))
+	}
+
+	s.mu.Lock()
+	s.checks = c
+	s.mu.Unlock()
+	return c
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+func errText(err error, okText string) string {
+	if err != nil {
+		return err.Error()
+	}
+	return okText
+}
+
+func probeHealth(ctx context.Context, url string) error {
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 100))
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "mailer ok") {
+		return fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func probeSMTP(ctx context.Context, addr string) error {
+	d := net.Dialer{Timeout: 8 * time.Second}
+	c, err := d.DialContext(ctx, "tcp4", addr)
+	if err != nil {
+		return errors.New("blocked or unreachable (your ISP may block port 25)")
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(8 * time.Second))
+	line, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, "220") {
+		return errors.New("connected but no SMTP greeting")
+	}
+	return nil
+}
+
+func probeIMAP(ctx context.Context, addr string) error {
+	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 10 * time.Second}}
+	c, err := d.DialContext(ctx, "tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer c.Close()
+	c.SetDeadline(time.Now().Add(10 * time.Second))
+	line, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil || !strings.HasPrefix(line, "* OK") {
+		return errors.New("no IMAP greeting")
+	}
+	return nil
+}
+
+func (s *Server) currentChecks() *Checks {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.checks
+}
+
+// ---- handlers ----
+
+type clientSettings struct {
+	Server         string `json:"server"`
+	IMAPPort       int    `json:"imap_port"`
+	SubmissionPort int    `json:"smtp_port"`
+}
+
+func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Cfg.Get()
+	checks := s.currentChecks()
+	q, _ := s.Queue.List()
+	dnsName := cfg.Tailscale.DNSName
+	if checks != nil && checks.Tailscale.DNSName != "" {
+		dnsName = checks.Tailscale.DNSName
+	}
+	var client *clientSettings
+	if dnsName != "" {
+		client = &clientSettings{dnsName, config.PublicIMAPPort, config.PublicSubmissionPort}
+	}
+	writeJSON(w, map[string]any{
+		"domain":           cfg.Domain(),
+		"hostname":         cfg.Hostname,
+		"cloudflare_setup": cfg.Cloudflare.ZoneID != "",
+		"tailscale_setup":  !cfg.Tailscale.EnabledAt.IsZero(),
+		"accounts":         len(s.Users.List()),
+		"queue":            len(q),
+		"checks":           checks,
+		"client":           client,
+		"last_inbound":     s.MTA.LastInbound(),
+		"connected_at":     cfg.Cloudflare.ConnectedAt,
+		"funnel_at":        cfg.Tailscale.EnabledAt,
+	})
+}
+
+func (s *Server) runChecksNow(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.refresh(r.Context()))
+}
+
+func (s *Server) cloudflareConnect(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Token, Zone string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if req.Token == "" {
+		req.Token = s.Cfg.Get().Cloudflare.Token // "repair" with the saved token
+	}
+	if req.Token == "" {
+		writeErr(w, 400, errors.New("paste your Cloudflare API token"))
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+	defer cancel()
+	steps, err := s.Setup.Connect(ctx, req.Token, req.Zone)
+	var zc *cloudflare.ZoneChoiceError
+	if errors.As(err, &zc) {
+		writeJSON(w, map[string]any{"choose_zone": zc.Zones})
+		return
+	}
+	resp := map[string]any{"steps": steps}
+	if err != nil {
+		resp["error"] = err.Error()
+	}
+	go s.refresh(context.Background())
+	writeJSON(w, resp)
+}
+
+func (s *Server) tailscaleEnable(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Cfg.Get()
+	st := tailscale.GetStatus(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission)
+	switch {
+	case !st.Installed:
+		writeJSON(w, map[string]any{"error": "Tailscale isn't installed on this machine.", "install": true})
+		return
+	case !st.Running:
+		writeJSON(w, map[string]any{"error": "Sign in to Tailscale on this machine first.", "action_url": st.LoginURL})
+		return
+	}
+	err := tailscale.EnableFunnel(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission)
+	var an *tailscale.ActionNeeded
+	if errors.As(err, &an) {
+		writeJSON(w, map[string]any{"error": an.Message, "action_url": an.URL})
+		return
+	}
+	if err != nil {
+		writeJSON(w, map[string]any{"error": err.Error()})
+		return
+	}
+	s.Cfg.Update(func(c *config.Config) {
+		c.Tailscale.DNSName = st.DNSName
+		c.Tailscale.EnabledAt = time.Now()
+	})
+	s.Log.Printf("tailscale: Funnel enabled on %s", st.DNSName)
+	go s.refresh(context.Background())
+	writeJSON(w, map[string]any{"ok": true, "dns_name": st.DNSName})
+}
+
+type mailboxInfo struct {
+	Name     string `json:"name"`
+	Messages int    `json:"messages"`
+	Unseen   int    `json:"unseen"`
+	Size     int64  `json:"size"`
+}
+
+type accountInfo struct {
+	Email     string        `json:"email"`
+	Mailboxes []mailboxInfo `json:"mailboxes"`
+	Messages  int           `json:"messages"`
+	Unseen    int           `json:"unseen"`
+	Size      int64         `json:"size"`
+	Aliases   []string      `json:"aliases"`
+}
+
+func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Cfg.Get()
+	out := []accountInfo{}
+	for _, email := range s.Users.List() {
+		ai := accountInfo{Email: email, Aliases: []string{}}
+		if acct, err := s.Store.Account(email); err == nil {
+			for _, mb := range acct.List() {
+				st, err := acct.Status(mb.Name)
+				if err != nil {
+					continue
+				}
+				ai.Mailboxes = append(ai.Mailboxes, mailboxInfo{mb.Name, st.Messages, st.Unseen, st.Size})
+				ai.Messages += st.Messages
+				ai.Size += st.Size
+				if mb.Name == "INBOX" {
+					ai.Unseen = st.Unseen
+				}
+			}
+		}
+		for alias, target := range cfg.Aliases {
+			if target == email {
+				ai.Aliases = append(ai.Aliases, alias)
+			}
+		}
+		sort.Strings(ai.Aliases)
+		out = append(out, ai)
+	}
+	writeJSON(w, out)
+}
+
+const pwAlphabet = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+func generatePassword() string {
+	b := make([]byte, 20)
+	rand.Read(b)
+	for i := range b {
+		b[i] = pwAlphabet[int(b[i])%len(pwAlphabet)]
+	}
+	return string(b[:5]) + "-" + string(b[5:10]) + "-" + string(b[10:15]) + "-" + string(b[15:])
+}
+
+func (s *Server) normalizeLocal(input string) (string, error) {
+	cfg := s.Cfg.Get()
+	input = strings.ToLower(strings.TrimSpace(input))
+	if input == "" {
+		return "", errors.New("enter an address")
+	}
+	if !strings.Contains(input, "@") {
+		if cfg.Domain() == "" {
+			return "", errors.New("connect Cloudflare first so the domain is known")
+		}
+		input += "@" + cfg.Domain()
+	}
+	_, domain, _ := strings.Cut(input, "@")
+	if !cfg.IsLocalDomain(domain) {
+		return "", fmt.Errorf("%s isn't one of your domains", domain)
+	}
+	return users.Normalize(input)
+}
+
+func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Email string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	email, err := s.normalizeLocal(req.Email)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	pw := generatePassword()
+	if err := s.Users.Add(email, pw); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	s.Store.Account(email) // create default folders now
+	s.Log.Printf("admin: created account %s", email)
+	writeJSON(w, map[string]string{"email": email, "password": pw})
+}
+
+func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Email string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	pw := generatePassword()
+	if err := s.Users.SetPassword(req.Email, pw); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	s.Log.Printf("admin: reset password for %s", req.Email)
+	writeJSON(w, map[string]string{"email": req.Email, "password": pw})
+}
+
+func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Email string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if err := s.Users.Delete(req.Email); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	s.Log.Printf("admin: deleted account %s (mail kept on disk)", req.Email)
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) getAliases(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.Cfg.Get().Aliases)
+}
+
+func (s *Server) putAliases(w http.ResponseWriter, r *http.Request) {
+	var in map[string]string
+	if err := readJSON(r, &in); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	cfg := s.Cfg.Get()
+	clean := map[string]string{}
+	for alias, target := range in {
+		alias = strings.ToLower(strings.TrimSpace(alias))
+		target = strings.ToLower(strings.TrimSpace(target))
+		if alias == "" {
+			continue
+		}
+		if !strings.Contains(alias, "@") {
+			alias += "@" + cfg.Domain()
+		}
+		_, domain, _ := strings.Cut(alias, "@")
+		if !cfg.IsLocalDomain(domain) {
+			writeErr(w, 400, fmt.Errorf("%s isn't one of your domains", alias))
+			return
+		}
+		if !s.Users.Exists(target) {
+			writeErr(w, 400, fmt.Errorf("%s: no account %q", alias, target))
+			return
+		}
+		clean[alias] = target
+	}
+	if err := s.Cfg.Update(func(c *config.Config) { c.Aliases = clean }); err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	writeJSON(w, clean)
+}
+
+func (s *Server) getQueue(w http.ResponseWriter, r *http.Request) {
+	items, err := s.Queue.List()
+	if err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	if items == nil {
+		items = []*queue.Item{}
+	}
+	writeJSON(w, items)
+}
+
+func (s *Server) retryQueue(w http.ResponseWriter, r *http.Request) {
+	if err := s.Queue.RetryAll(); err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.Logs.Lines(300))
+}
+
+type settingsView struct {
+	RejectDMARCFailures bool  `json:"reject_dmarc_failures"`
+	SaveSentCopy        bool  `json:"save_sent_copy"`
+	MaxMessageMB        int64 `json:"max_message_mb"`
+}
+
+func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Cfg.Get()
+	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.MaxMessageBytes >> 20})
+}
+
+func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
+	var v settingsView
+	if err := readJSON(r, &v); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if v.MaxMessageMB < 1 || v.MaxMessageMB > 25 {
+		writeErr(w, 400, errors.New("max message size must be 1–25 MB (Cloudflare's limit is 25 MB)"))
+		return
+	}
+	err := s.Cfg.Update(func(c *config.Config) {
+		c.RejectDMARCFailures = v.RejectDMARCFailures
+		c.SaveSentCopy = v.SaveSentCopy
+		c.MaxMessageBytes = v.MaxMessageMB << 20
+	})
+	if err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	writeJSON(w, v)
+}
