@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { FloatingProvider } from "./components/Floating";
+import { FloatingProvider, useFloating } from "./components/Floating";
 import { ModalProvider, useModal } from "./components/Modal";
 import { ToastProvider } from "./components/Toasts";
 import { storage } from "./format";
@@ -44,11 +44,15 @@ function Shell() {
   const view = useView();
   const { ov, error } = useOverview();
   const { open } = useModal();
+  const { close: closeFloating } = useFloating();
   const [collapsed, setCollapsed] = useState(storage("mailer.collapsed") === "1");
   const [navOpen, setNavOpen] = useState(false);
   const autoOpened = useRef(false);
 
-  useEffect(() => setNavOpen(false), [view]);
+  useEffect(() => {
+    setNavOpen(false);
+    closeFloating();
+  }, [view, closeFloating]);
 
   // Open the wizard once per browser session while nothing is set up.
   useEffect(() => {
