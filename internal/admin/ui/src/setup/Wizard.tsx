@@ -44,14 +44,23 @@ export function Wizard({ step: forced }: { step?: StepNum }) {
   }, 900);
 
   if (!ov || !step) return null;
-  const { body, action } =
-    step === 1 ? CloudflareStep({ advance }) :
-    step === 2 ? TailscaleStep({ advance }) :
-    AccountStep({ ov });
+  if (step === 1) return <CloudflareStep ov={ov} advance={advance} />;
+  if (step === 2) return <TailscaleStep ov={ov} advance={advance} />;
+  return <AccountStep ov={ov} />;
+}
+
+interface FrameProps {
+  ov: Overview;
+  current: StepNum;
+  action: ReactNode;
+  children: ReactNode;
+}
+
+function Frame({ ov, current, action, children }: FrameProps) {
   return (
     <Modal title="Set up Mailer" wide footer={<><CloseButton />{action}</>}>
-      <Steps ov={ov} current={step} />
-      {body}
+      <Steps ov={ov} current={current} />
+      {children}
     </Modal>
   );
 }
@@ -71,14 +80,12 @@ function Steps({ ov, current }: { ov: Overview; current: StepNum }) {
   );
 }
 
-interface StepView {
-  body: ReactNode;
-  action: ReactNode;
+interface StepProps {
+  ov: Overview;
+  advance: () => void;
 }
 
-// The step functions are called as hooks from Wizard; each step is always
-// rendered in the same position, so hook order is stable per step.
-function CloudflareStep({ advance }: { advance: () => void }): StepView {
+function CloudflareStep({ ov, advance }: StepProps) {
   const toast = useToast();
   const [token, setToken] = useState("");
   const [zones, setZones] = useState<string[] | null>(null);
@@ -108,8 +115,8 @@ function CloudflareStep({ advance }: { advance: () => void }): StepView {
     }
   };
 
-  return {
-    body: (
+  return (
+    <Frame ov={ov} current={1} action={<AsyncButton className="btn primary" onClick={run}>Connect</AsyncButton>}>
       <div>
         <p>Cloudflare receives mail for your domain and passes it to this server through a tunnel. One token sets up everything.</p>
         <div className="field">
@@ -132,12 +139,11 @@ function CloudflareStep({ advance }: { advance: () => void }): StepView {
         )}
         {status}
       </div>
-    ),
-    action: <AsyncButton className="btn primary" onClick={run}>Connect</AsyncButton>,
-  };
+    </Frame>
+  );
 }
 
-function TailscaleStep({ advance }: { advance: () => void }): StepView {
+function TailscaleStep({ ov, advance }: StepProps) {
   const enable = useEnableTailscale();
   const [r, setR] = useState<TailscaleResult | null>(null);
   const run = async () => {
@@ -145,8 +151,8 @@ function TailscaleStep({ advance }: { advance: () => void }): StepView {
     setR(res);
     if (res.ok) advance();
   };
-  return {
-    body: (
+  return (
+    <Frame ov={ov} current={2} action={<AsyncButton className="btn primary" onClick={run}>Enable</AsyncButton>}>
       <div>
         <p>Tailscale Funnel lets Outlook and the Gmail app reach this server securely, with nothing opened on your router.</p>
         <ol className="perm-list">
@@ -167,19 +173,24 @@ function TailscaleStep({ advance }: { advance: () => void }): StepView {
           </div>
         )}
       </div>
-    ),
-    action: <AsyncButton className="btn primary" onClick={run}>Enable</AsyncButton>,
-  };
+    </Frame>
+  );
 }
 
-function AccountStep({ ov }: { ov: Overview }): StepView {
+function AccountStep({ ov }: { ov: Overview }) {
   const { open } = useModal();
   const { reload } = useOverview();
   const [name, setName] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
-  return {
-    body: (
+  return (
+    <Frame ov={ov} current={3} action={(
+      <AsyncButton className="btn primary" onClick={async () => {
+        const c = await api.createAccount(name);
+        await reload();
+        open(<PasswordModal title="Account created" email={c.email} password={c.password} />);
+      }}>Create account</AsyncButton>
+    )}>
       <div>
         <p>Create the mailbox you'll use in Outlook or the Gmail app.</p>
         <div className="field">
@@ -190,13 +201,6 @@ function AccountStep({ ov }: { ov: Overview }): StepView {
           </div>
         </div>
       </div>
-    ),
-    action: (
-      <AsyncButton className="btn primary" onClick={async () => {
-        const c = await api.createAccount(name);
-        await reload();
-        open(<PasswordModal title="Account created" email={c.email} password={c.password} />);
-      }}>Create account</AsyncButton>
-    ),
-  };
+    </Frame>
+  );
 }
