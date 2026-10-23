@@ -1,0 +1,5 @@
+# Runtime data: mail, accounts, keys, settings (contains your Cloudflare token)
+mailer-data/
+# Built binaries
+/mailer
+/mailer.exe
