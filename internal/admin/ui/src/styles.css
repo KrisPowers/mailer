@@ -363,3 +363,6 @@ dialog::backdrop { background: rgba(15, 20, 30, .45); }
 .icon-btn.spin .i { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .clickable { cursor: pointer; }
+.banner.bad { background: var(--bad-soft); }
+.field select, .field input[type=password], .field input[type=text]:not(.input-suffix input) { width: 100%; }
+.num-input { width: 80px; }
