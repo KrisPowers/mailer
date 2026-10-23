@@ -13,11 +13,12 @@ interface Open {
 }
 
 interface FloatingApi {
+  anchor: HTMLElement | null;
   toggle: (anchor: HTMLElement, kind: Kind, content: ReactNode) => void;
   close: () => void;
 }
 
-const FloatingContext = createContext<FloatingApi>({ toggle: () => {}, close: () => {} });
+const FloatingContext = createContext<FloatingApi>({ anchor: null, toggle: () => {}, close: () => {} });
 
 export const useFloating = () => useContext(FloatingContext);
 
@@ -34,7 +35,6 @@ export function FloatingProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!open) return;
-    open.anchor.classList.add("open");
     const onDown = (e: Event) => {
       const t = e.target as Node;
       if (!box.current?.contains(t) && !open.anchor.contains(t)) close();
@@ -48,7 +48,6 @@ export function FloatingProvider({ children }: { children: ReactNode }) {
     window.addEventListener("resize", close);
     window.addEventListener("scroll", onScroll, true);
     return () => {
-      open.anchor.classList.remove("open");
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", close);
@@ -69,7 +68,7 @@ export function FloatingProvider({ children }: { children: ReactNode }) {
   }, [open]);
 
   return (
-    <FloatingContext.Provider value={{ toggle, close }}>
+    <FloatingContext.Provider value={{ anchor: open?.anchor ?? null, toggle, close }}>
       {children}
       {open && <div ref={box} className={open.kind}>{open.content}</div>}
     </FloatingContext.Provider>
@@ -93,9 +92,10 @@ function MenuList({ items }: { items: MenuItem[] }) {
 
 // MoreMenu is the ⋮ button that opens a row's action menu.
 export function MoreMenu({ items }: { items: () => MenuItem[] }) {
-  const { toggle } = useFloating();
+  const { anchor, toggle } = useFloating();
+  const ref = useRef<HTMLButtonElement>(null);
   return (
-    <button className="icon-btn" title="Actions" onClick={(e: MouseEvent<HTMLButtonElement>) => {
+    <button ref={ref} className={"icon-btn" + (anchor && anchor === ref.current ? " open" : "")} title="Actions" onClick={(e: MouseEvent<HTMLButtonElement>) => {
       e.stopPropagation();
       toggle(e.currentTarget, "menu", <MenuList items={items()} />);
     }}>
@@ -112,9 +112,10 @@ interface PopoverButtonProps {
 }
 
 export function PopoverButton({ className = "icon-btn", title, content, children }: PopoverButtonProps) {
-  const { toggle } = useFloating();
+  const { anchor, toggle } = useFloating();
+  const ref = useRef<HTMLButtonElement>(null);
   return (
-    <button className={className} title={title} onClick={(e) => {
+    <button ref={ref} className={className + (anchor && anchor === ref.current ? " open" : "")} title={title} onClick={(e) => {
       e.stopPropagation();
       toggle(e.currentTarget, "popover", content);
     }}>
