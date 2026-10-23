@@ -64,3 +64,16 @@ settings. Back that folder up. Use `-data DIR` to put it somewhere else.
 go test ./...
 MAILER_NET_TESTS=1 go test ./internal/tunnel   # also tests the real cloudflared download
 ```
+
+### Admin UI
+
+The admin page is React + TypeScript, built with Vite, in `internal/admin/ui`.
+The build goes to `internal/admin/web`, which is committed and embedded in the
+binary, so building the server never needs Node.
+
+```sh
+cd internal/admin/ui
+npm install
+npm run dev     # hot reload on :5173, proxies /api to a running mailer on :8080
+npm run build   # type-check, then rebuild internal/admin/web — commit the result
+```
