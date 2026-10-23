@@ -25,7 +25,6 @@ export function RepairCloudflare() {
       });
     return () => { live = false; };
     // Run once when the dialog opens.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
