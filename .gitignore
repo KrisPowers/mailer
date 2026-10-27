@@ -4,3 +4,5 @@ mailer-data/
 /mailer
 # Desktop app builds from before the container
 /builds/
+# Windows icon resources the desktop build generated
+*.syso
