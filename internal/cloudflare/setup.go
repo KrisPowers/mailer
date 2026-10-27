@@ -100,7 +100,11 @@ func (s *Setup) Connect(ctx context.Context, zoneName string) ([]Step, error) {
 	if primary {
 		tunnelAcct, tunnelZone, inboundHost = acct, zone.ID, "mail-in."+domain
 	}
-	tunnelID, tunnelToken, err := s.ensureTunnel(ctx, c, tunnelAcct, tunnelZone, inboundHost)
+	domains := cfg.Domains
+	if !cfg.IsLocalDomain(domain) {
+		domains = append(domains, domain)
+	}
+	tunnelID, tunnelToken, err := s.ensureTunnel(ctx, c, tunnelAcct, tunnelZone, inboundHost, domains)
 	if err != nil {
 		return fail("Create tunnel", err)
 	}
@@ -174,13 +178,19 @@ func (s *Setup) Connect(ctx context.Context, zoneName string) ([]Step, error) {
 		return fail("Publish sending IP (SPF)", err)
 	}
 	done("Publish sending IP (SPF)", ip)
+
+	if err := s.syncClientHosts(ctx, c, s.Cfg.Get()); err != nil {
+		return fail("Publish mail app settings", err)
+	}
+	done("Publish mail app settings", strings.Join(clientHosts(domain), ", "))
 	s.Log.Printf("cloudflare: connected %s", domain)
 	return steps, nil
 }
 
 // ensureTunnel reuses our tunnel if it still exists in acct (or creates
-// one) and routes host to the local inbound port through it.
-func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host string) (id, token string, err error) {
+// one) and routes host, and the domains' mail app settings names, to the
+// local inbound port through it.
+func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host string, domains []string) (id, token string, err error) {
 	cfg := s.Cfg.Get()
 	var tunnel *Tunnel
 	if cfg.Cloudflare.TunnelID != "" && cfg.Cloudflare.AccountID == acct {
@@ -198,8 +208,7 @@ func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host 
 	if token, err = c.TunnelToken(ctx, acct, tunnel.ID); err != nil {
 		return "", "", err
 	}
-	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, host,
-		fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)); err != nil {
+	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, ingressHosts(host, domains), inboundService(cfg)); err != nil {
 		return "", "", err
 	}
 	on := true
@@ -208,6 +217,57 @@ func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host 
 		return "", "", err
 	}
 	return tunnel.ID, token, nil
+}
+
+// clientHosts are the names mail apps look up to find a domain's server
+// settings from an address alone: Autodiscover (Outlook) and autoconfig
+// (Thunderbird and others). The tunnel carries them to this server.
+func clientHosts(domain string) []string {
+	return []string{"autodiscover." + domain, "autoconfig." + domain}
+}
+
+// ingressHosts is everything the tunnel serves: the Worker's inbound
+// address and every domain's mail app settings names.
+func ingressHosts(inbound string, domains []string) []string {
+	hosts := []string{inbound}
+	for _, d := range domains {
+		hosts = append(hosts, clientHosts(d)...)
+	}
+	return hosts
+}
+
+func inboundService(cfg config.Config) string {
+	return fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)
+}
+
+// syncClientHosts routes every domain's mail app settings names through
+// the tunnel, changing the tunnel's routes only when they differ.
+func (s *Setup) syncClientHosts(ctx context.Context, c *Client, cfg config.Config) error {
+	cf := cfg.Cloudflare
+	want := ingressHosts(cf.InboundHost, cfg.Domains)
+	have, err := c.TunnelIngressHosts(ctx, cf.AccountID, cf.TunnelID)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(have, want) {
+		if err := c.SetTunnelIngress(ctx, cf.AccountID, cf.TunnelID, want, inboundService(cfg)); err != nil {
+			return err
+		}
+	}
+	on := true
+	for _, d := range cfg.Domains {
+		z, ok := cf.Zones[d]
+		if !ok {
+			continue
+		}
+		for _, h := range clientHosts(d) {
+			if err := c.UpsertRecord(ctx, z.ID, Record{Type: "CNAME", Name: h,
+				Content: cf.TunnelID + ".cfargotunnel.com", TTL: 1, Proxied: &on}, nil); err != nil {
+				return fmt.Errorf("%s: %w", h, err)
+			}
+		}
+	}
+	return nil
 }
 
 // Zones lists the domains the saved sign-in or API token can see.
@@ -393,6 +453,13 @@ func (s *Setup) SyncDNS(ctx context.Context) (string, error) {
 		if err := s.syncDomain(ctx, cfg, d, ip); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", d, err))
 		}
+	}
+	c, err := s.client(ctx)
+	if err == nil {
+		err = s.syncClientHosts(ctx, c, cfg)
+	}
+	if err != nil {
+		errs = append(errs, fmt.Errorf("mail app settings: %w", err))
 	}
 	return ip, errors.Join(errs...)
 }
@@ -636,6 +703,23 @@ func (s *Setup) checkDomain(ctx context.Context, c *Client, cfg config.Config, d
 		} else {
 			add("Email Sending", false, "not enabled for "+domain)
 		}
+	}
+
+	missing := []string{}
+	for _, h := range clientHosts(domain) {
+		recs, err := c.ListRecords(ctx, z.ID, "CNAME", h)
+		if err != nil {
+			missing = append(missing, h+": "+err.Error())
+		} else if !slices.ContainsFunc(recs, func(r Record) bool {
+			return strings.TrimSuffix(r.Content, ".") == cfg.Cloudflare.TunnelID+".cfargotunnel.com"
+		}) {
+			missing = append(missing, h)
+		}
+	}
+	if len(missing) == 0 {
+		add("Mail app settings", true, strings.Join(clientHosts(domain), ", "))
+	} else {
+		add("Mail app settings", false, "not routed to this server: "+strings.Join(missing, ", "))
 	}
 
 	switch dmarc, err := txt("_dmarc."+domain, "v=DMARC1"); {

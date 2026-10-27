@@ -23,6 +23,7 @@ import (
 // setReject). Anything else is temporary.
 func (m *MTA) InboundHandler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", m.clientConfig)
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "mailer ok")
 	})

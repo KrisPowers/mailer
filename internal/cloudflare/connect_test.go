@@ -30,6 +30,7 @@ type fakeCF struct {
 	catchAll map[string]string // zone ID -> worker, "" when off
 	worker   map[string]any
 	script   string
+	tunnel   map[string]any             // tunnel configuration
 	sending  map[string][]SendingDomain // zone ID -> onboarded domains
 	sent     []map[string]any           // send_raw request bodies
 }
@@ -100,8 +101,13 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ok(map[string]any{"id": "t1", "status": "healthy", "connections": []any{map[string]string{}}})
 	case p == "/accounts/a1/cfd_tunnel/t1/token":
 		ok("tunnel-token")
-	case p == "/accounts/a1/cfd_tunnel/t1/configurations":
+	case p == "/accounts/a1/cfd_tunnel/t1/configurations" && r.Method == "PUT":
+		var body struct{ Config map[string]any }
+		json.NewDecoder(r.Body).Decode(&body)
+		f.tunnel = body.Config
 		ok(map[string]any{})
+	case p == "/accounts/a1/cfd_tunnel/t1/configurations":
+		ok(map[string]any{"config": f.tunnel})
 	case rest == "dns_records" && r.Method == "GET":
 		out := []Record{}
 		for _, rec := range f.records[zone] {
@@ -271,7 +277,16 @@ func TestConnect(t *testing.T) {
 	}
 	check("z1", "CNAME", "mail-in.example.com", "t1.cfargotunnel.com")
 	check("z1", "A", "mail.example.com", "203.0.113.50")
+	ingress, _ := json.Marshal(fake.tunnel)
+	for _, h := range []string{"mail-in.example.com", "autodiscover.example.com", "autoconfig.example.com",
+		"autodiscover.example.org", "autoconfig.example.org", "http_status:404"} {
+		if !strings.Contains(string(ingress), h) {
+			t.Errorf("tunnel ingress missing %s: %s", h, ingress)
+		}
+	}
 	for z, d := range map[string]string{"z1": "example.com", "z2": "example.org"} {
+		check(z, "CNAME", "autodiscover."+d, "t1.cfargotunnel.com")
+		check(z, "CNAME", "autoconfig."+d, "t1.cfargotunnel.com")
 		check(z, "TXT", "mail._domainkey."+d, "v=DKIM1; k=rsa; p=KEY-"+d)
 		check(z, "TXT", "_dmarc."+d, defaultDMARC)
 		check(z, "TXT", d, "v=spf1 include:_spf.mx.cloudflare.net ip4:203.0.113.50 ~all")
@@ -291,7 +306,7 @@ func TestConnect(t *testing.T) {
 		t.Fatalf("status: %+v", st)
 	}
 	for _, d := range st.Domains {
-		if !d.OK() || len(d.Checks) != 6 {
+		if !d.OK() || len(d.Checks) != 7 {
 			t.Errorf("%s not compliant: %+v", d.Name, d.Checks)
 		}
 	}
