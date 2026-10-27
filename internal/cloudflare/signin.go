@@ -55,8 +55,8 @@ func randomString(n int) string {
 }
 
 // SignIn runs Cloudflare's browser sign-in and saves the credential: it
-// opens Cloudflare's consent page with open and waits up to five minutes
-// for Cloudflare to send the browser back here.
+// hands Cloudflare's consent page to open, for the dashboard to show, and
+// waits up to five minutes for Cloudflare to send the browser back here.
 func (s *Setup) SignIn(ctx context.Context, open func(url string)) error {
 	verifier := randomString(48)
 	sum := sha256.Sum256([]byte(verifier))
@@ -93,9 +93,13 @@ func (s *Setup) SignIn(ctx context.Context, open func(url string)) error {
 	})
 
 	// The browser may resolve localhost to either address.
+	addrs := []string{"127.0.0.1:" + oauthPort, "[::1]:" + oauthPort}
+	if s.CallbackHost != "" {
+		addrs = []string{net.JoinHostPort(s.CallbackHost, oauthPort)}
+	}
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	listening := false
-	for _, addr := range []string{"127.0.0.1:" + oauthPort, "[::1]:" + oauthPort} {
+	for _, addr := range addrs {
 		if l, err := net.Listen("tcp", addr); err == nil {
 			listening = true
 			go srv.Serve(l)

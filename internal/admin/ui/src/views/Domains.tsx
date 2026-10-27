@@ -44,7 +44,7 @@ export function Domains() {
     { label: "Repair", icon: "refresh", onClick: () => open(<RepairCloudflare domains={[d.name]} onDone={reload} />) },
     {
       label: "Open in Cloudflare", icon: "external",
-      onClick: () => api.openURL(`https://dash.cloudflare.com/${d.account_id}/${d.name}`),
+      onClick: () => window.open(`https://dash.cloudflare.com/${d.account_id}/${d.name}`, "_blank", "noopener"),
     },
     ...(d.primary ? [] : ["-" as const, {
       label: "Remove", icon: "trash" as const, danger: true, onClick: () => open(

@@ -1,7 +1,6 @@
-// Command mailer is a self-contained mail server for your own domains.
-// Opening it starts the server and shows the admin UI in a native window,
-// where everything is set up and managed. With -headless it runs without
-// the window and serves the admin page on loopback instead.
+// Command mailer is a self-contained mail server for your own domains. It
+// runs in a container beside cloudflared and Tailscale, and is set up and
+// managed from its web dashboard.
 package main
 
 import (
@@ -10,7 +9,6 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,10 +16,8 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -42,56 +38,32 @@ import (
 
 const maxClientMessage = 25 << 20
 
-func defaultDataDir() string {
-	if dir := os.Getenv("LOCALAPPDATA"); runtime.GOOS == "windows" && dir != "" {
-		return filepath.Join(dir, "mailer", "data")
+// env returns the environment variable key, or def when it's unset.
+func env(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	if exe, err := os.Executable(); err == nil {
-		return filepath.Join(filepath.Dir(exe), "mailer-data")
-	}
-	return "mailer-data"
+	return def
 }
 
 func main() {
-	dataDir := flag.String("data", defaultDataDir(), "directory for mail, accounts, keys and settings")
-	headless := flag.Bool("headless", false, "run without the window; the admin page is served on 127.0.0.1:8080")
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: mailer [-data DIR] [-headless] [install | uninstall]\n\n"+
-			"  (no command)  run the server and open its window\n"+
-			"  install       start mailer automatically at boot (run as admin/root)\n"+
-			"  uninstall     remove the boot service\n")
-	}
+	dataDir := flag.String("data", env("MAILER_DATA", "mailer-data"), "directory for mail, accounts, keys and settings")
+	listen := flag.String("listen", env("MAILER_LISTEN", "127.0.0.1"),
+		"address the dashboard and the Cloudflare sign-in callback listen on (0.0.0.0 in the container)")
 	flag.Parse()
 	abs, err := filepath.Abs(*dataDir)
-	fatal(err)
-
-	switch flag.Arg(0) {
-	case "":
-		fatal(serve(abs, *headless))
-	case "install":
-		fatal(install(abs))
-	case "uninstall":
-		fatal(uninstall())
-	default:
-		flag.Usage()
-		os.Exit(2)
+	if err == nil {
+		err = serve(abs, *listen)
 	}
-}
-
-func fatal(err error) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
-func serve(dataDir string, headless bool) error {
+func serve(dataDir, listenHost string) error {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return err
-	}
-	if !headless {
-		retireScriptInstalls(dataDir)
-		retireOlderBuilds(dataDir)
 	}
 	logs := logbuf.New(1000)
 	// mailer.log keeps the log across restarts; the previous one is kept
@@ -105,8 +77,7 @@ func serve(dataDir string, headless bool) error {
 		return err
 	}
 	defer logFile.Close()
-	// The windowed build has no valid stderr, and MultiWriter stops at the
-	// first failed write, so it goes last.
+	// docker logs shows stderr.
 	logger := log.New(io.MultiWriter(logs, logFile, os.Stderr), "", log.LstdFlags)
 
 	cfgm, err := config.Open(dataDir)
@@ -128,7 +99,7 @@ func serve(dataDir string, headless bool) error {
 	hostname := func() string { return cfgm.Get().Hostname }
 
 	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger}
-	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger}
+	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger, CallbackHost: listenHost}
 	q, err := queue.New(filepath.Join(dataDir, "queue"), &cloudflare.Relay{Setup: setup}, m.Bounce, logger)
 	if err != nil {
 		return err
@@ -137,15 +108,17 @@ func serve(dataDir string, headless bool) error {
 
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}
 	adm := &admin.Server{Cfg: cfgm, Users: db, Store: st, Queue: q, MTA: m, Setup: setup,
-		Tunnel: runner, Logs: logs, Log: logger, OpenURL: openBrowser}
+		Tunnel: runner, Logs: logs, Log: logger}
 
 	sub := &smtp.Server{Hostname: hostname, Mode: smtp.ModeSubmission, Users: db, Limiter: limiter,
 		MaxSize: maxClientMessage, Backend: mta.Submission{MTA: m}, Log: logger}
 	im := &imap.Server{Hostname: hostname, Users: db, Store: st, Limiter: limiter,
 		MaxMessage: maxClientMessage, Log: logger}
 
-	// Everything listens on loopback only. The internet reaches us through
-	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients).
+	// Mail ports listen on loopback only: the internet reaches them through
+	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients),
+	// both running in this container. The dashboard listens on listenHost,
+	// which the container publishes to the host's loopback only.
 	loop := func(port int) string { return fmt.Sprintf("127.0.0.1:%d", port) }
 	var listeners []net.Listener
 	listen := func(name, addr string) (net.Listener, error) {
@@ -162,65 +135,39 @@ func serve(dataDir string, headless bool) error {
 		}
 	}()
 
-	url := fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)
+	adminL, err := listen("dashboard", net.JoinHostPort(listenHost, fmt.Sprint(cfg.Ports.Admin)))
+	if err != nil {
+		return err
+	}
+	inboundL, err := listen("inbound", loop(cfg.Ports.Inbound))
+	if err != nil {
+		return err
+	}
+	imapL, err := listen("IMAP", loop(cfg.Ports.IMAP))
+	if err != nil {
+		return err
+	}
+	subL, err := listen("submission", loop(cfg.Ports.Submission))
+	if err != nil {
+		return err
+	}
+
 	tunnelDone := make(chan struct{})
-	// start opens the listeners and background work. The window serves the
-	// admin UI in-process, so only headless runs listen for it.
-	start := func(adminPort bool) error {
-		if adminPort {
-			adminL, err := listen("admin UI", loop(cfg.Ports.Admin))
-			if err != nil {
-				return err
-			}
-			go (&http.Server{Handler: adm.Handler(), ReadHeaderTimeout: 10 * time.Second}).Serve(adminL)
-		}
-		inboundL, err := listen("inbound", loop(cfg.Ports.Inbound))
-		if err != nil {
-			return err
-		}
-		imapL, err := listen("IMAP", loop(cfg.Ports.IMAP))
-		if err != nil {
-			return err
-		}
-		subL, err := listen("submission", loop(cfg.Ports.Submission))
-		if err != nil {
-			return err
-		}
+	go (&http.Server{Handler: adm.Handler(), ReadHeaderTimeout: 10 * time.Second}).Serve(adminL)
+	go (&http.Server{Handler: m.InboundHandler(), ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout: 5 * time.Minute}).Serve(inboundL)
+	go im.Serve(imapL, true)
+	go sub.Serve(subL, true)
+	go q.Run(ctx)
+	go func() {
+		runner.Run(ctx, func() string { return cfgm.Get().Cloudflare.TunnelToken })
+		close(tunnelDone)
+	}()
+	go adm.RunChecks(ctx)
+	go syncDNS(ctx, setup, cfgm, logger)
+	logger.Printf("mailer running; dashboard on port %d", cfg.Ports.Admin)
+	<-ctx.Done()
 
-		go (&http.Server{Handler: m.InboundHandler(), ReadHeaderTimeout: 10 * time.Second,
-			ReadTimeout: 5 * time.Minute}).Serve(inboundL)
-		go im.Serve(imapL, true)
-		go sub.Serve(subL, true)
-		go q.Run(ctx)
-		go func() {
-			runner.Run(ctx, func() string { return cfgm.Get().Cloudflare.TunnelToken })
-			close(tunnelDone)
-		}()
-		go adm.RunChecks(ctx)
-		go syncDNS(ctx, setup, cfgm, logger)
-		logger.Printf("mailer running")
-		return nil
-	}
-
-	started := false
-	if !headless {
-		if started, err = runWindow(adm.Handler(), func() error { return start(false) }); err != nil {
-			return err
-		}
-		if !started {
-			logger.Printf("this build has no window; running headless")
-		}
-	}
-	if !started {
-		if err := start(true); err != nil {
-			return err
-		}
-		logger.Printf("admin page: %s", url)
-		if !cfg.Connected() {
-			openBrowser(url)
-		}
-		<-ctx.Done()
-	}
 	logger.Printf("shutting down")
 	stop()
 	// Wait for the tunnel connector to exit so it doesn't outlive us.
@@ -312,103 +259,4 @@ func (d *dkimKeys) load(domain, selector string) (*mailauth.Signer, error) {
 	s := &mailauth.Signer{Domain: domain, Selector: selector, Key: key}
 	d.keys[domain] = s
 	return s, nil
-}
-
-func openBrowser(url string) {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "darwin":
-		cmd = exec.Command("open", url)
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	default:
-		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
-			return // headless server
-		}
-		cmd = exec.Command("xdg-open", url)
-	}
-	cmd.Start()
-}
-
-// ---- boot service ----
-
-const serviceName = "mailer"
-
-func install(dataDir string) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
-	}
-	exe, _ = filepath.EvalSymlinks(exe)
-	switch runtime.GOOS {
-	case "linux":
-		unit := fmt.Sprintf(`[Unit]
-Description=Mailer mail server
-After=network-online.target tailscaled.service
-Wants=network-online.target
-
-[Service]
-ExecStart=%q -headless -data %q
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-`, exe, dataDir)
-		if err := os.WriteFile("/etc/systemd/system/"+serviceName+".service", []byte(unit), 0o644); err != nil {
-			return fmt.Errorf("%w (run with sudo)", err)
-		}
-		if err := runCmd("systemctl", "daemon-reload"); err != nil {
-			return err
-		}
-		return runCmd("systemctl", "enable", "--now", serviceName)
-	case "darwin":
-		plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>com.mailer</string>
-  <key>ProgramArguments</key><array><string>%s</string><string>-headless</string><string>-data</string><string>%s</string></array>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-  <key>StandardErrorPath</key><string>%s</string>
-</dict></plist>
-`, exe, dataDir, filepath.Join(dataDir, "mailer.log"))
-		path := "/Library/LaunchDaemons/com.mailer.plist"
-		if err := os.WriteFile(path, []byte(plist), 0o644); err != nil {
-			return fmt.Errorf("%w (run with sudo)", err)
-		}
-		return runCmd("launchctl", "load", "-w", path)
-	case "windows":
-		tr := fmt.Sprintf(`"%s" -headless -data "%s"`, exe, dataDir)
-		if err := runCmd("schtasks", "/Create", "/TN", "Mailer", "/TR", tr, "/SC", "ONSTART", "/RU", "SYSTEM", "/RL", "HIGHEST", "/F"); err != nil {
-			return fmt.Errorf("%w (run from an Administrator terminal)", err)
-		}
-		return runCmd("schtasks", "/Run", "/TN", "Mailer")
-	}
-	return errors.New("install isn't supported on " + runtime.GOOS)
-}
-
-func uninstall() error {
-	switch runtime.GOOS {
-	case "linux":
-		runCmd("systemctl", "disable", "--now", serviceName)
-		return os.Remove("/etc/systemd/system/" + serviceName + ".service")
-	case "darwin":
-		path := "/Library/LaunchDaemons/com.mailer.plist"
-		runCmd("launchctl", "unload", "-w", path)
-		return os.Remove(path)
-	case "windows":
-		runCmd("schtasks", "/End", "/TN", "Mailer")
-		return runCmd("schtasks", "/Delete", "/TN", "Mailer", "/F")
-	}
-	return errors.New("uninstall isn't supported on " + runtime.GOOS)
-}
-
-func runCmd(name string, args ...string) error {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("%s: %w", name, err)
-	}
-	return nil
 }

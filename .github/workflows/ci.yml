@@ -45,3 +45,10 @@ jobs:
             echo "::error::internal/admin/web is stale; commit the 'web' artifact from this run"
             exit 1
           fi
+
+  # The container image: UI, server, cloudflared and Tailscale.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t mailer .

@@ -20,13 +20,13 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 export const api = {
   overview: () => call<Overview>("GET", "/api/overview"),
   check: () => call<Checks>("POST", "/api/check"),
-  signInCloudflare: () => call<ConnectResult>("POST", "/api/cloudflare/signin"),
+  signInCloudflare: () => call<ConnectResult & { url?: string }>("POST", "/api/cloudflare/signin"),
+  signInCloudflareWait: () => call<ConnectResult>("POST", "/api/cloudflare/signin/wait"),
   connectCloudflare: (token: string, zone: string) =>
     call<ConnectResult>("POST", "/api/cloudflare/connect", { token, zone }),
   zones: () => call<Zone[]>("GET", "/api/cloudflare/zones"),
   domains: () => call<DomainInfo[]>("GET", "/api/domains"),
   removeDomain: (domain: string) => call<{ ok: boolean; warning: string }>("POST", "/api/domains/remove", { domain }),
-  openURL: (url: string) => call<{ ok: boolean }>("POST", "/api/open", { url }),
   enableTailscale: () => call<TailscaleResult>("POST", "/api/tailscale/enable"),
   accounts: () => call<Account[]>("GET", "/api/accounts"),
   createAccount: (email: string, password: string) => call<Credentials>("POST", "/api/accounts", { email, password }),

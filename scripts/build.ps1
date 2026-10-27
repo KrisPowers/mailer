@@ -1,32 +1,18 @@
-# Builds the Mailer desktop app into builds\Mailer.exe: the admin UI, the
-# Windows icon and manifest, then the server and its window in one exe.
-# Needs Go and Node.js. Opening Mailer.exe starts the mail server and shows
-# its window; Mailer > Quit Mailer stops it.
+# Rebuilds the admin UI into internal/admin/web, the copy the Go binary
+# embeds for `go vet`, `go test` and builds outside Docker. The container
+# image builds its own copy (see Dockerfile). Needs Node.js.
 
-# Failures are caught by exit code: go and npm print progress on stderr,
-# which PowerShell 5.1 turns into errors when output is redirected.
-Set-Location (Split-Path $PSScriptRoot -Parent) -ErrorAction Stop
+# Failures are caught by exit code: npm prints progress on stderr, which
+# PowerShell 5.1 turns into errors when output is redirected.
+Set-Location (Join-Path (Split-Path $PSScriptRoot -Parent) internal\admin\ui) -ErrorAction Stop
 
 function Check($what) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit code $LASTEXITCODE)" }
 }
 
-Push-Location internal\admin\ui
 npm ci --no-audit --no-fund
 Check "npm ci"
 npm run build
 Check "admin UI build"
-Pop-Location
 
-go mod tidy
-Check "go mod tidy"
-
-go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui --icon cmd\mailer\icon.png `
-    --product-name Mailer --file-description Mailer --original-filename Mailer.exe --out cmd\mailer\rsrc
-Check "icon and manifest"
-
-New-Item -ItemType Directory -Force builds -ErrorAction Stop | Out-Null
-go build -tags desktop,production -trimpath -ldflags "-w -s -H windowsgui" -o builds\Mailer.exe ./cmd/mailer
-Check "go build"
-
-Write-Host "Built builds\Mailer.exe"
+Write-Host "Built internal\admin\web"

@@ -11,28 +11,37 @@ Your replies ──▶ mailer ──▶ Cloudflare Email Sending ──▶ recip
 
 ## Setup
 
-Mailer is a desktop app. Opening it starts the mail server and shows its window,
-where everything is set up and managed.
+Mailer runs as one Docker container: the mail server with its web dashboard,
+`cloudflared` for the Cloudflare Tunnel, and Tailscale for Funnel. Nothing on your
+router or computer is opened; the dashboard is published to this computer only.
 
-1. **Build:** `scripts\build.ps1` (needs Go and Node.js) makes `builds\Mailer.exe`.
-2. **Install [Tailscale](https://tailscale.com/download)** and sign in.
-3. **Open `Mailer.exe`** and, in its window:
-   - **Connect Cloudflare**, then approve in the browser window that opens. Mailer
-     signs in through Cloudflare's own `cf` command-line app, keeps the sign-in
-     renewed, and sets everything up by itself.
-   - **Tailscale → Enable**. The first time, Tailscale may show one link to allow Funnel.
+1. **Start it** from the repo folder (Docker Desktop shows it as `mailer` afterwards):
+   ```sh
+   docker compose up -d --build
+   ```
+2. **Open http://localhost:8080** and:
+   - **Connect Cloudflare**, then approve in the tab that opens. Mailer signs in
+     through Cloudflare's own `cf` command-line app, keeps the sign-in renewed, and
+     sets everything up by itself.
+   - **Tailscale → Enable**. The first time it shows a link to sign this server in
+     to your tailnet, then one to allow Funnel; click Enable again after each.
    - **Accounts → Create account**
    - more domains: **Domains → Add domain** (any domain on your Cloudflare account)
 
-The window then shows the server address and ports to enter in Outlook or the Gmail app.
+The dashboard then shows the server address and ports to enter in Outlook or the
+Gmail app. The container restarts by itself with Docker.
 
-Closing the window hides it and mail keeps flowing; opening Mailer again brings it
-back. **Mailer → Quit Mailer** stops the server.
+Set `TS_AUTHKEY` (a [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys))
+before starting to sign Tailscale in without the link. `TS_HOSTNAME` in
+`compose.yaml` names the server on your tailnet (default `mail`).
 
-On a machine without a desktop, run `mailer -headless` instead (plain
-`go build -o mailer ./cmd/mailer` builds it) and use the admin page at
-**http://127.0.0.1:8080** on that machine. `sudo mailer install` starts it headless
-at boot.
+### Moving from the desktop app
+
+On Windows the container uses the desktop app's data folder,
+`%LOCALAPPDATA%\mailer\data`, so accounts, mail and the Cloudflare setup carry over.
+Quit the desktop app (**Mailer → Quit Mailer**) before starting the container. The
+container is a new machine on your tailnet, so enable Funnel once from the dashboard
+and point mail apps at the new server name it shows.
 
 ## What the setup does for you
 
@@ -41,7 +50,7 @@ at boot.
   DKIM, DMARC, and SPF records. One tunnel
   serves every domain; the first domain connected (the primary) carries the server's
   hostname and the tunnel's address
-- Downloads `cloudflared` (official release, checksum-verified) and keeps it running
+- Keeps `cloudflared` (in the image) connected
 - Mail app settings: `autodiscover.<domain>` (Outlook) and `autoconfig.<domain>`
   (Thunderbird and others) are routed through the tunnel and answer with the server
   and ports, so a mail app needs only the address and password
@@ -60,7 +69,7 @@ Cloudflare takes messages up to 5 MB; a larger message bounces back to the sende
 the reason. Messages Cloudflare can't take yet (for example, before the plan is active)
 wait in the **Outbound queue** and are retried for four days.
 
-## The app window
+## The dashboard
 
 The **Overview** page shows the connection checks (tunnel, Email Routing, inbound path,
 Funnel, IMAP reachability, Email Sending) and your client settings. The other pages:
@@ -74,14 +83,14 @@ Funnel, IMAP reachability, Email Sending) and your client settings. The other pa
 | **Logs** | Recent server activity |
 | **Settings** | DMARC strictness, saving sent copies, max message size, re-running Cloudflare setup |
 
-The same pages are served on 127.0.0.1 only, so they can only be reached from the
-server itself.
+`compose.yaml` publishes the dashboard on 127.0.0.1 only, so it can only be reached
+from the computer running Docker.
 
 ## Data
 
-Mail, accounts, keys, and settings live in `%LOCALAPPDATA%\mailer\data` on Windows
-and in `mailer-data/` next to the binary elsewhere. Back that folder up. Use
-`-data DIR` to put it somewhere else.
+Mail, accounts, keys, settings and Tailscale's state live in the container's `/data`,
+which `compose.yaml` maps to `%LOCALAPPDATA%\mailer\data` on Windows and
+`./mailer/data` elsewhere. Back that folder up.
 
 ## Limits
 
@@ -95,11 +104,12 @@ go test ./...
 MAILER_NET_TESTS=1 go test ./internal/tunnel   # also tests the real cloudflared download
 ```
 
-### Admin UI
+### Dashboard
 
-The admin page is React + TypeScript, built with Vite, in `internal/admin/ui`.
-The build goes to `internal/admin/web`, which is committed and embedded in the
-binary, so building the server never needs Node.
+The dashboard is React + TypeScript, built with Vite, in `internal/admin/ui`.
+The image builds it itself. A copy in `internal/admin/web` is committed so `go vet`,
+`go test` and builds outside Docker work without Node; `scripts\build.ps1` (or
+`npm run build`) refreshes it.
 
 ```sh
 cd internal/admin/ui
@@ -107,6 +117,3 @@ npm install
 npm run dev     # hot reload on :5173, proxies /api to a running mailer on :8080
 npm run build   # type-check, then rebuild internal/admin/web; commit the result
 ```
-
-CI rebuilds the UI on every PR, fails if the committed build is stale, and uploads
-the fresh build as the `web` artifact.

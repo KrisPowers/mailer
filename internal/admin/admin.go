@@ -1,5 +1,5 @@
-// Package admin serves the local web UI used to set up and manage the
-// server. It listens on loopback only.
+// Package admin serves the web dashboard used to set up and manage the
+// server. The container publishes it on the host's loopback only.
 package admin
 
 import (
@@ -45,11 +45,10 @@ type Server struct {
 	Tunnel *tunnel.Runner
 	Logs   *logbuf.Buffer
 	Log    *log.Logger
-	// OpenURL opens a link in the default browser; the app window can't.
-	OpenURL func(url string)
 
 	mu     sync.Mutex
 	checks *Checks
+	signIn *signIn
 }
 
 func (s *Server) Handler() http.Handler {
@@ -60,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/overview", s.overview)
 	mux.HandleFunc("POST /api/check", s.runChecksNow)
 	mux.HandleFunc("POST /api/cloudflare/signin", s.cloudflareSignIn)
+	mux.HandleFunc("POST /api/cloudflare/signin/wait", s.cloudflareSignInWait)
 	mux.HandleFunc("POST /api/cloudflare/connect", s.cloudflareConnect)
 	mux.HandleFunc("GET /api/cloudflare/zones", s.cloudflareZones)
 	mux.HandleFunc("GET /api/domains", s.listDomains)
@@ -76,13 +76,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs", s.getLogs)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
-	mux.HandleFunc("POST /api/open", s.openURL)
 	return s.guard(mux)
 }
 
 // guard rejects requests that didn't come from a page on this machine:
-// the Host header must be a loopback name or the app window's in-process
-// origin (defeats DNS rebinding), and
+// the Host header must be a loopback name (defeats DNS rebinding), and
 // state-changing requests must carry a custom header, which other sites
 // can't send cross-origin.
 func (s *Server) guard(next http.Handler) http.Handler {
@@ -92,7 +90,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			host = r.Host
 		}
 		switch host {
-		case "localhost", "127.0.0.1", "::1", "[::1]", "wails.localhost", "wails":
+		case "localhost", "127.0.0.1", "::1", "[::1]":
 		default:
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
@@ -209,9 +207,10 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 	const enable = "Click Enable Funnel."
 	switch {
 	case !ts.Installed:
-		add("tailscale", "Tailscale", false, "Not installed", "Install Tailscale from tailscale.com/download and sign in.")
+		add("tailscale", "Tailscale", false, "Not installed", "Run Mailer from its container image, which includes Tailscale.")
 	case !ts.Running:
-		add("tailscale", "Tailscale", false, "Not signed in ("+orDash(ts.State)+")", "Open Tailscale on this computer and sign in.")
+		add("tailscale", "Tailscale", false, "Not signed in ("+orDash(ts.State)+")",
+			"Click Enable Funnel and sign in to Tailscale with the link it shows, or set TS_AUTHKEY for the container.")
 	default:
 		add("tailscale", "Tailscale", true, ts.DNSName, "")
 		add("tailscale", "Funnel for reading mail (IMAP :443)", ts.FunnelIMAP, ts.DNSName+":443",
@@ -354,18 +353,61 @@ func (s *Server) runChecksNow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.refresh(r.Context()))
 }
 
-// cloudflareSignIn is the one-click connect: Cloudflare's sign-in page
-// opens in the browser, and once it's approved the setup runs.
+// signIn is a Cloudflare sign-in waiting for the browser to come back.
+type signIn struct {
+	cancel context.CancelFunc
+	done   chan map[string]any // the outcome, once
+	ended  chan struct{}       // closed when its callback listener is gone
+}
+
+// cloudflareSignIn is the one-click connect. It starts Cloudflare's
+// sign-in and returns its page for the dashboard to open; once that page
+// is approved the setup runs, and cloudflareSignInWait reports the outcome.
 func (s *Server) cloudflareSignIn(w http.ResponseWriter, r *http.Request) {
-	if s.OpenURL == nil {
-		writeErr(w, 500, errors.New("no browser to sign in with"))
+	s.mu.Lock()
+	prev := s.signIn
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	si := &signIn{cancel: cancel, done: make(chan map[string]any, 1), ended: make(chan struct{})}
+	s.signIn = si
+	s.mu.Unlock()
+	if prev != nil {
+		// Its listener holds the callback port.
+		prev.cancel()
+		<-prev.ended
+	}
+
+	page := make(chan string, 1)
+	go func() {
+		defer cancel()
+		err := s.Setup.SignIn(ctx, func(u string) { page <- u })
+		close(si.ended)
+		if err != nil {
+			si.done <- map[string]any{"error": err.Error()}
+			return
+		}
+		si.done <- s.connect(ctx, "")
+	}()
+	select {
+	case u := <-page:
+		writeJSON(w, map[string]string{"url": u})
+	case res := <-si.done:
+		writeJSON(w, res)
+	}
+}
+
+func (s *Server) cloudflareSignInWait(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	si := s.signIn
+	s.mu.Unlock()
+	if si == nil {
+		writeErr(w, 400, errors.New("no Cloudflare sign-in in progress; click Connect Cloudflare again"))
 		return
 	}
-	if err := s.Setup.SignIn(r.Context(), s.OpenURL); err != nil {
-		writeJSON(w, map[string]any{"error": err.Error()})
-		return
+	select {
+	case res := <-si.done:
+		writeJSON(w, res)
+	case <-r.Context().Done():
 	}
-	s.connect(w, r, "")
 }
 
 // cloudflareConnect sets up zone (or repairs it) with the saved sign-in,
@@ -382,24 +424,25 @@ func (s *Server) cloudflareConnect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.connect(w, r, req.Zone)
+	writeJSON(w, s.connect(r.Context(), req.Zone))
 }
 
-func (s *Server) connect(w http.ResponseWriter, r *http.Request, zone string) {
-	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+// connect runs the Cloudflare setup for zone and describes the outcome for
+// the dashboard.
+func (s *Server) connect(ctx context.Context, zone string) map[string]any {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	steps, err := s.Setup.Connect(ctx, zone)
 	var zc *cloudflare.ZoneChoiceError
 	if errors.As(err, &zc) {
-		writeJSON(w, map[string]any{"choose_zone": zc.Zones})
-		return
+		return map[string]any{"choose_zone": zc.Zones}
 	}
 	resp := map[string]any{"steps": steps}
 	if err != nil {
 		resp["error"] = err.Error()
 	}
 	go s.refresh(context.Background())
-	writeJSON(w, resp)
+	return resp
 }
 
 type zoneInfo struct {
@@ -477,13 +520,18 @@ func (s *Server) tailscaleEnable(w http.ResponseWriter, r *http.Request) {
 	st := tailscale.GetStatus(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission)
 	switch {
 	case !st.Installed:
-		writeJSON(w, map[string]any{"error": "Tailscale isn't installed on this machine.", "install": true})
+		writeJSON(w, map[string]any{"error": "Tailscale isn't installed. Run Mailer from its container image, which includes it."})
+		return
+	case !st.Running && st.LoginURL != "":
+		writeJSON(w, map[string]any{"error": "Sign in to Tailscale to add this container to your tailnet, then click Enable again.",
+			"action_url": st.LoginURL})
 		return
 	case !st.Running:
-		writeJSON(w, map[string]any{"error": "Sign in to Tailscale on this machine first.", "action_url": st.LoginURL})
+		writeJSON(w, map[string]any{"error": "Tailscale isn't signed in and has no sign-in link yet (" + orDash(st.State) +
+			"). Wait a few seconds and click Enable again, or set TS_AUTHKEY for the container."})
 		return
 	}
-	err := tailscale.EnableFunnel(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission, s.OpenURL)
+	err := tailscale.EnableFunnel(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission)
 	if err != nil {
 		s.Log.Printf("tailscale: enabling Funnel: %v", err)
 	}
@@ -696,21 +744,6 @@ func (s *Server) retryQueue(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err)
 		return
 	}
-	writeJSON(w, map[string]bool{"ok": true})
-}
-
-// openURL opens a web link (Cloudflare, Tailscale) in the default browser.
-func (s *Server) openURL(w http.ResponseWriter, r *http.Request) {
-	var req struct{ URL string }
-	if err := readJSON(r, &req); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	if !strings.HasPrefix(req.URL, "https://") || s.OpenURL == nil {
-		writeErr(w, 400, errors.New("only https links can be opened"))
-		return
-	}
-	s.OpenURL(req.URL)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

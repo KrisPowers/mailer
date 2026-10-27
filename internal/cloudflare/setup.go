@@ -40,6 +40,10 @@ type Setup struct {
 	// if needed.
 	DKIMRecord func(domain string) (string, error)
 	Log        *log.Logger
+	// CallbackHost is the address the sign-in callback listens on; empty
+	// means loopback. The container listens on 0.0.0.0 and publishes the
+	// port to the host's loopback.
+	CallbackHost string
 
 	mu sync.Mutex // one credential renewal at a time
 }
