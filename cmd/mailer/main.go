@@ -90,6 +90,9 @@ func serve(dataDir string, headless bool) error {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return err
 	}
+	if !headless {
+		retireScriptInstalls(dataDir)
+	}
 	logs := logbuf.New(1000)
 	// The log buffer goes first: the windowed build has no valid stderr,
 	// and MultiWriter stops at the first failed write.
