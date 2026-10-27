@@ -1,6 +1,6 @@
 # Mailer
 
-A self-hosted mail server for your own domain. Outlook or the Gmail app is the UI;
+A self-hosted mail server for your own domains. Outlook or the Gmail app is the UI;
 this program stores, receives, and sends the mail. No router ports are opened.
 
 ```
@@ -18,6 +18,8 @@ Your replies ◀── mailer sends directly, DKIM-signed
    - paste a Cloudflare API token (the page lists the permissions) → **Connect**
    - **Tailscale → Enable**. The first time, Tailscale may show one link to allow Funnel.
    - **Accounts → Create account**
+   - more domains: **Domains → Add domain** (the token must be able to see them:
+     list each under Zone Resources, or pick All zones)
 
 To start it automatically at boot: `sudo mailer install` (on Windows, run from an
 Administrator terminal).
@@ -26,10 +28,12 @@ The page then shows the server address and ports to enter in Outlook or the Gmai
 
 ## What the setup does for you
 
-- Cloudflare: creates the tunnel, deploys the email Worker, turns on Email Routing,
-  and publishes the DKIM, DMARC, and SPF records
+- Cloudflare, per domain: deploys the email Worker, turns on Email Routing, points the
+  catch-all at the Worker, and publishes the DKIM, DMARC, and SPF records. One tunnel
+  serves every domain; the first domain connected (the primary) carries the server's
+  hostname and the tunnel's address
 - Downloads `cloudflared` (official release, checksum-verified) and keeps it running
-- Keeps SPF updated when your home IP changes
+- Keeps every domain's SPF updated when your home IP changes
 - Tailscale Funnel: IMAP on port 443 and sending on port 8443, with Tailscale's TLS
   certificate and the real client IP passed through for rate limiting
 
@@ -40,8 +44,9 @@ Funnel, IMAP reachability, outbound port 25) and your client settings. The other
 
 | Page | What it's for |
 |---|---|
+| **Domains** | Add and remove domains; per-domain Email Routing, catch-all, MX, SPF, DKIM and DMARC checks read from Cloudflare's API; repair |
 | **Accounts** | Create accounts, see per-account mail counts and sizes, reset passwords, delete accounts |
-| **Aliases** | Extra addresses and a catch-all |
+| **Aliases** | Extra addresses and a catch-all per domain |
 | **Outbound queue** | Messages waiting to send; retry them |
 | **Logs** | Recent server activity |
 | **Settings** | DMARC strictness, saving sent copies, max message size, re-running Cloudflare setup |
@@ -75,5 +80,8 @@ binary, so building the server never needs Node.
 cd internal/admin/ui
 npm install
 npm run dev     # hot reload on :5173, proxies /api to a running mailer on :8080
-npm run build   # type-check, then rebuild internal/admin/web — commit the result
+npm run build   # type-check, then rebuild internal/admin/web; commit the result
 ```
+
+CI rebuilds the UI on every PR, fails if the committed build is stale, and uploads
+the fresh build as the `web` artifact.

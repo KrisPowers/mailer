@@ -118,7 +118,7 @@ function CloudflareStep({ ov, advance }: StepProps) {
   return (
     <Frame ov={ov} current={1} action={<AsyncButton className="btn primary" onClick={run}>Connect</AsyncButton>}>
       <div>
-        <p>Cloudflare receives mail for your domain and passes it to this server through a tunnel. One token sets up everything.</p>
+        <p>Cloudflare receives mail for your domains and passes it to this server through a tunnel. One token sets up everything; add more domains later on the Domains page.</p>
         <div className="field">
           <label htmlFor="cf-token">API token</label>
           <input id="cf-token" type="password" placeholder="Paste Cloudflare API token" autoComplete="off" spellCheck={false}
@@ -127,7 +127,10 @@ function CloudflareStep({ ov, advance }: StepProps) {
             <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Create a custom token</a>
             {" · "}
             <button className="info-btn" onClick={() => setShowPerms(!showPerms)}><Icon name="info" />Required permissions</button>
-            {showPerms && <ul className="perm-list">{PERMISSIONS.map((p) => <li key={p}>{p}</li>)}</ul>}
+            {showPerms && <ul className="perm-list">
+              {PERMISSIONS.map((p) => <li key={p}>{p}</li>)}
+              <li>Zone Resources: every domain you'll manage here, or All zones</li>
+            </ul>}
           </div>
         </div>
         {zones && (

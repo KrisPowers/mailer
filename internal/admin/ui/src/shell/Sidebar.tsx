@@ -14,6 +14,7 @@ export function Sidebar({ view }: { view: View }) {
   return (
     <nav className="sidebar">
       {link("dashboard", "grid", "Dashboard")}
+      {link("domains", "globe", "Domains", ov?.domains?.length)}
       {link("accounts", "users", "Accounts", ov?.accounts)}
       {link("aliases", "at", "Aliases")}
       {link("queue", "send", "Outbound queue", ov?.queue, true)}

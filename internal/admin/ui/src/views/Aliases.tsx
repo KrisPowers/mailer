@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { AsyncButton } from "../components/AsyncButton";
 import { Confirm } from "../components/Confirm";
+import { DomainField } from "../components/DomainField";
 import { MoreMenu } from "../components/Floating";
 import { Icon } from "../components/Icon";
 import { EmptyRow, PageHead, Panel } from "../components/Layout";
@@ -13,6 +14,7 @@ import { useLoad } from "../useLoad";
 
 export function Aliases() {
   const { ov } = useOverview();
+  const domains = ov?.domains ?? [];
   const domain = ov?.domain ?? "";
   const aliases = useLoad(api.aliases);
   const accounts = useLoad(api.accounts);
@@ -22,8 +24,6 @@ export function Aliases() {
 
   const map = aliases.data ?? {};
   const emails = (accounts.data ?? []).map((a) => a.email);
-  const catchKey = "@" + domain;
-  const catchTarget = map[catchKey] ?? "";
 
   const save = async (next: AliasMap) => {
     await api.saveAliases(next);
@@ -31,15 +31,15 @@ export function Aliases() {
     await aliases.reload();
   };
 
-  const setCatchAll = (on: boolean, target: string) => {
+  const setCatchAll = (d: string, on: boolean, target: string) => {
     const next = { ...map };
-    delete next[catchKey];
-    if (on && target) next[catchKey] = target;
+    delete next["@" + d];
+    if (on && target) next["@" + d] = target;
     save(next).catch((e) => toast((e as Error).message, true));
   };
 
   const edit = (alias = "", target = "") =>
-    open(<EditAlias alias={alias} target={target} domain={domain} emails={emails} map={map} save={save} />);
+    open(<EditAlias alias={alias} target={target} domains={domains} emails={emails} map={map} save={save} />);
 
   const rows = Object.entries(map).filter(([k]) => !k.startsWith("@")).sort(([a], [b]) => a.localeCompare(b));
 
@@ -50,21 +50,26 @@ export function Aliases() {
       </PageHead>
       <Panel>
         <div className="panel-body">
-          <div className="switch-row">
-            <label className="switch">
-              <input type="checkbox" checked={!!catchTarget} disabled={!emails.length}
-                onChange={(e) => setCatchAll(e.target.checked, catchTarget || emails[0])} />
-              <span />
-            </label>
-            <div className="txt">
-              <b>Catch-all</b>
-              <span className="muted">Deliver mail for any unknown @{domain} address to </span>
-              <select value={catchTarget || emails[0] || ""} disabled={!emails.length}
-                onChange={(e) => catchTarget && setCatchAll(true, e.target.value)}>
-                {emails.map((e) => <option key={e} value={e}>{e}</option>)}
-              </select>
-            </div>
-          </div>
+          {domains.map((d) => {
+            const catchTarget = map["@" + d] ?? "";
+            return (
+              <div className="switch-row" key={d}>
+                <label className="switch">
+                  <input type="checkbox" checked={!!catchTarget} disabled={!emails.length}
+                    onChange={(e) => setCatchAll(d, e.target.checked, catchTarget || emails[0])} />
+                  <span />
+                </label>
+                <div className="txt">
+                  <b>Catch-all{domains.length > 1 ? " for " + d : ""}</b>
+                  <span className="muted">Deliver mail for any unknown @{d} address to </span>
+                  <select value={catchTarget || emails[0] || ""} disabled={!emails.length}
+                    onChange={(e) => catchTarget && setCatchAll(d, true, e.target.value)}>
+                    {emails.map((e) => <option key={e} value={e}>{e}</option>)}
+                  </select>
+                </div>
+              </div>
+            );
+          })}
           <div className="switch-row">
             <Icon name="info" />
             <div className="txt muted">
@@ -113,15 +118,16 @@ export function Aliases() {
 interface EditProps {
   alias: string;
   target: string;
-  domain: string;
+  domains: string[];
   emails: string[];
   map: AliasMap;
   save: (next: AliasMap) => Promise<void>;
 }
 
-function EditAlias({ alias, target, domain, emails, map, save }: EditProps) {
+function EditAlias({ alias, target, domains, emails, map, save }: EditProps) {
   const { close } = useModal();
   const [local, setLocal] = useState(alias.split("@")[0]);
+  const [domain, setDomain] = useState(alias.split("@")[1] || domains[0] || "");
   const [to, setTo] = useState(target || emails[0] || "");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
@@ -142,6 +148,7 @@ function EditAlias({ alias, target, domain, emails, map, save }: EditProps) {
           <span>@{domain}</span>
         </div>
       </div>
+      <DomainField domains={domains} value={domain} onChange={setDomain} />
       <div className="field">
         <label htmlFor="alias-to">Delivers to</label>
         <select id="alias-to" value={to} onChange={(e) => setTo(e.target.value)}>

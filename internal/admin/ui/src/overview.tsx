@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import type { Health } from "./components/Badge";
-import type { Overview } from "./types";
+import type { DomainStatus, Overview } from "./types";
 
 interface OverviewState {
   ov: Overview | null;
@@ -54,10 +54,14 @@ export function statusOf(ov: Overview | null): StatusSummary {
   const p25 = port25(ov);
   return {
     cf: !cf.connected ? "bad"
-      : cf.tunnel_status === "healthy" && cf.email_routing === "ready" && cf.catch_all_ok && cf.public_healthy ? "ok" : "warn",
+      : cf.tunnel_status === "healthy" && cf.public_healthy && cf.domains.every(domainOK) ? "ok" : "warn",
     ts: !ts.installed || !ts.running ? "bad" : ts.funnel_imap && ts.funnel_submission ? "ok" : "warn",
     out: !p25 ? "none" : !p25.ok ? "bad" : ov.queue ? "warn" : "ok",
   };
+}
+
+export function domainOK(d: DomainStatus): boolean {
+  return !d.error && d.checks.length > 0 && d.checks.every((c) => c.ok);
 }
 
 export function port25(ov: Overview | null) {

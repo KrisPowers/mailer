@@ -36,9 +36,18 @@ func (c *Client) Verify(ctx context.Context) error {
 
 // Zones lists the zones the token can see.
 func (c *Client) Zones(ctx context.Context) ([]Zone, error) {
-	var zones []Zone
-	err := c.do(ctx, "GET", "/zones?per_page=50", nil, &zones)
-	return zones, err
+	const perPage = 50
+	var all []Zone
+	for page := 1; ; page++ {
+		var zones []Zone
+		if err := c.do(ctx, "GET", fmt.Sprintf("/zones?per_page=%d&page=%d", perPage, page), nil, &zones); err != nil {
+			return nil, err
+		}
+		all = append(all, zones...)
+		if len(zones) < perPage {
+			return all, nil
+		}
+	}
 }
 
 // ---- tunnels ----
@@ -173,6 +182,17 @@ func (c *Client) RouteAllToWorker(ctx context.Context, zoneID, worker string) er
 		"enabled":  true,
 		"matchers": []map[string]string{{"type": "all"}},
 		"actions":  []map[string]any{{"type": "worker", "value": []string{worker}}},
+	}
+	return c.do(ctx, "PUT", "/zones/"+zoneID+"/email/routing/rules/catch_all", body, nil)
+}
+
+// DisableCatchAll turns the catch-all rule off, so Cloudflare stops
+// passing the zone's mail to the Worker.
+func (c *Client) DisableCatchAll(ctx context.Context, zoneID string) error {
+	body := map[string]any{
+		"enabled":  false,
+		"matchers": []map[string]string{{"type": "all"}},
+		"actions":  []map[string]string{{"type": "drop"}},
 	}
 	return c.do(ctx, "PUT", "/zones/"+zoneID+"/email/routing/rules/catch_all", body, nil)
 }

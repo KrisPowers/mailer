@@ -39,16 +39,30 @@ type Config struct {
 }
 
 type Cloudflare struct {
-	Token         string    `json:"token"`
+	Token string `json:"token"`
+	// The tunnel lives in the primary domain's account and zone.
 	AccountID     string    `json:"account_id"`
-	ZoneID        string    `json:"zone_id"`
 	TunnelID      string    `json:"tunnel_id"`
 	TunnelToken   string    `json:"tunnel_token"`
 	InboundHost   string    `json:"inbound_host"`   // e.g. mail-in.example.com
 	InboundSecret string    `json:"inbound_secret"` // shared with the Worker
-	WorkerName    string    `json:"worker_name"`
-	SPFIP         string    `json:"spf_ip"` // IP we last published in SPF
 	ConnectedAt   time.Time `json:"connected_at"`
+	// Zones holds each connected domain's Cloudflare state, keyed by domain.
+	Zones map[string]Zone `json:"zones"`
+
+	// Single-domain fields from before Zones, moved into Zones on load.
+	ZoneID     string `json:"zone_id,omitempty"`
+	WorkerName string `json:"worker_name,omitempty"`
+	SPFIP      string `json:"spf_ip,omitempty"`
+}
+
+// Zone is one domain's Cloudflare zone.
+type Zone struct {
+	ID          string    `json:"id"`
+	AccountID   string    `json:"account_id"`
+	WorkerName  string    `json:"worker_name"`      // Email Worker the catch-all rule points at
+	SPFIP       string    `json:"spf_ip,omitempty"` // IP we last published in SPF
+	ConnectedAt time.Time `json:"connected_at"`
 }
 
 type Tailscale struct {
@@ -80,6 +94,9 @@ func (c *Config) IsLocalDomain(domain string) bool {
 	}
 	return false
 }
+
+// Connected reports whether at least one domain is set up in Cloudflare.
+func (c *Config) Connected() bool { return len(c.Cloudflare.Zones) > 0 }
 
 // Domain returns the primary domain, or "" before setup.
 func (c *Config) Domain() string {
@@ -113,6 +130,15 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Ports.Submission == 0 {
 		c.Ports.Submission = 1587
+	}
+	cf := &c.Cloudflare
+	if cf.Zones == nil {
+		cf.Zones = map[string]Zone{}
+	}
+	if cf.ZoneID != "" && c.Domain() != "" {
+		cf.Zones[c.Domain()] = Zone{ID: cf.ZoneID, AccountID: cf.AccountID, WorkerName: cf.WorkerName,
+			SPFIP: cf.SPFIP, ConnectedAt: cf.ConnectedAt}
+		cf.ZoneID, cf.WorkerName, cf.SPFIP = "", "", ""
 	}
 	if c.Cloudflare.InboundSecret == "" {
 		b := make([]byte, 32)
@@ -152,6 +178,7 @@ func (m *Manager) Get() Config {
 	c := m.c
 	c.Domains = append([]string(nil), m.c.Domains...)
 	c.Aliases = maps.Clone(m.c.Aliases)
+	c.Cloudflare.Zones = maps.Clone(m.c.Cloudflare.Zones)
 	return c
 }
 

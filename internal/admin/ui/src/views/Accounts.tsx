@@ -3,6 +3,7 @@ import { api } from "../api";
 import { AsyncButton } from "../components/AsyncButton";
 import { Badge } from "../components/Badge";
 import { Confirm } from "../components/Confirm";
+import { DomainField } from "../components/DomainField";
 import { MoreMenu, type MenuItem } from "../components/Floating";
 import { Icon } from "../components/Icon";
 import { EmptyRow, PageHead, Panel, Search } from "../components/Layout";
@@ -61,7 +62,7 @@ export function Accounts() {
     <>
       <PageHead title="Accounts" sub={data ? accounts.length + " total" : ""}>
         <Search value={q} onChange={setQ} placeholder="Search accounts" />
-        <button className="btn primary" disabled={!ov?.domain} onClick={() => open(<NewAccount domain={ov?.domain ?? ""} onCreated={refresh} />)}>
+        <button className="btn primary" disabled={!ov?.domain} onClick={() => open(<NewAccount domains={ov?.domains ?? []} onCreated={refresh} />)}>
           <Icon name="plus" />New account
         </button>
       </PageHead>
@@ -123,13 +124,14 @@ function AccountDetails({ account: a }: { account: Account }) {
   );
 }
 
-function NewAccount({ domain, onCreated }: { domain: string; onCreated: () => Promise<void> }) {
+function NewAccount({ domains, onCreated }: { domains: string[]; onCreated: () => Promise<void> }) {
   const { open } = useModal();
   const [name, setName] = useState("");
+  const [domain, setDomain] = useState(domains[0] ?? "");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   const create = async () => {
-    const r = await api.createAccount(name);
+    const r = await api.createAccount(name.includes("@") ? name : name + "@" + domain);
     await onCreated();
     open(<PasswordModal title="Account created" email={r.email} password={r.password} />);
   };
@@ -143,6 +145,7 @@ function NewAccount({ domain, onCreated }: { domain: string; onCreated: () => Pr
         </div>
         <div className="hint">A strong password is generated and shown once.</div>
       </div>
+      <DomainField domains={domains} value={domain} onChange={setDomain} />
     </Modal>
   );
 }

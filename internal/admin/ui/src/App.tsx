@@ -11,12 +11,14 @@ import { Topbar } from "./shell/Topbar";
 import { Accounts } from "./views/Accounts";
 import { Aliases } from "./views/Aliases";
 import { Dashboard } from "./views/Dashboard";
+import { Domains } from "./views/Domains";
 import { Logs } from "./views/Logs";
 import { Queue } from "./views/Queue";
 import { Settings } from "./views/Settings";
 
 const PAGES: Record<View, () => React.JSX.Element> = {
   dashboard: Dashboard,
+  domains: Domains,
   accounts: Accounts,
   aliases: Aliases,
   queue: Queue,

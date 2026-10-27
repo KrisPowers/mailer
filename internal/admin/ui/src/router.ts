@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const VIEWS = ["dashboard", "accounts", "aliases", "queue", "logs", "settings"] as const;
+export const VIEWS = ["dashboard", "domains", "accounts", "aliases", "queue", "logs", "settings"] as const;
 export type View = (typeof VIEWS)[number];
 
 function current(): View {
