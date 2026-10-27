@@ -103,7 +103,7 @@ function Row({ e }: { e: SignInEvent }) {
       <td className="wrap"><b>{e.proto === "imap" ? "Reading (IMAP)" : "Sending (SMTP)"}</b>
         {e.client && <div className="muted small">{e.client}</div>}</td>
       <td className="mono">{e.ip}</td>
-      <td>{e.user || "—"}</td>
+      <td>{e.user}</td>
       <td><Badge kind={r.kind}>{r.label}</Badge></td>
       <td className="act">
         {(!!e.detail || !!e.commands?.length) && (
