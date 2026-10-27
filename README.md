@@ -17,7 +17,8 @@ where everything is set up and managed.
 1. **Build:** `scripts\build.ps1` (needs Go and Node.js) makes `builds\Mailer.exe`.
 2. **Install [Tailscale](https://tailscale.com/download)** and sign in.
 3. **Open `Mailer.exe`** and, in its window:
-   - paste a Cloudflare API token (the window lists the permissions) → **Connect**
+   - **Open token page** (Cloudflare opens with the permissions filled in), click
+     **Continue to summary** → **Create Token**, paste the token back → **Connect**
    - **Tailscale → Enable**. The first time, Tailscale may show one link to allow Funnel.
    - **Accounts → Create account**
    - more domains: **Domains → Add domain** (the token must be able to see them:
