@@ -133,8 +133,12 @@ function CloudflareStep({ ov, advance }: StepProps) {
 function TailscaleStep({ ov, advance }: StepProps) {
   const enable = useEnableTailscale();
   const [r, setR] = useState<TailscaleResult | null>(null);
+  const [busy, setBusy] = useState(false);
   const run = async () => {
+    setR(null);
+    setBusy(true);
     const res = await enable(true);
+    setBusy(false);
     setR(res);
     if (res.ok) advance();
   };
@@ -144,8 +148,9 @@ function TailscaleStep({ ov, advance }: StepProps) {
         <p>Tailscale Funnel lets Outlook and the Gmail app reach this server securely, with nothing opened on your router.</p>
         <ol className="perm-list">
           <li>Install Tailscale on this machine and sign in <a href="https://tailscale.com/download" target="_blank" rel="noopener">(download)</a>.</li>
-          <li>Click Enable. The first time, Tailscale may ask you to allow Funnel with one click.</li>
+          <li>Click Enable. The first time, Tailscale opens in your browser to allow Funnel: approve it there and setup continues by itself.</li>
         </ol>
+        {busy && <p className="muted">Enabling Funnel. If Tailscale opened in your browser, approve it there.</p>}
         {r?.ok && <p><Icon name="check" /> Enabled: <code>{r.dns_name}</code></p>}
         {r && !r.ok && (
           <div className="note">
