@@ -202,8 +202,12 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 			add("IMAP answers over Funnel", err == nil, errText(err, "greeting received"))
 		}
 	}
-	add("Outbound port 25 (sending replies)", port25 == nil,
-		errText(port25, "your ISP allows outbound mail"))
+	if cfg.SendViaCloudflare {
+		add("Sending", true, "through Cloudflare Email Sending")
+	} else {
+		add("Outbound port 25 (sending replies)", port25 == nil,
+			errText(port25, "your ISP allows outbound mail"))
+	}
 	if t := s.MTA.LastInbound(); !t.IsZero() {
 		add("Last message received", true, t.Format("Jan 2 15:04"))
 	}
@@ -312,18 +316,19 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		client = &clientSettings{dnsName, config.PublicIMAPPort, config.PublicSubmissionPort}
 	}
 	writeJSON(w, map[string]any{
-		"domain":           cfg.Domain(),
-		"domains":          cfg.Domains,
-		"hostname":         cfg.Hostname,
-		"cloudflare_setup": cfg.Connected(),
-		"tailscale_setup":  !cfg.Tailscale.EnabledAt.IsZero(),
-		"accounts":         len(s.Users.List()),
-		"queue":            len(q),
-		"checks":           checks,
-		"client":           client,
-		"last_inbound":     s.MTA.LastInbound(),
-		"connected_at":     cfg.Cloudflare.ConnectedAt,
-		"funnel_at":        cfg.Tailscale.EnabledAt,
+		"domain":              cfg.Domain(),
+		"domains":             cfg.Domains,
+		"hostname":            cfg.Hostname,
+		"cloudflare_setup":    cfg.Connected(),
+		"tailscale_setup":     !cfg.Tailscale.EnabledAt.IsZero(),
+		"send_via_cloudflare": cfg.SendViaCloudflare,
+		"accounts":            len(s.Users.List()),
+		"queue":               len(q),
+		"checks":              checks,
+		"client":              client,
+		"last_inbound":        s.MTA.LastInbound(),
+		"connected_at":        cfg.Cloudflare.ConnectedAt,
+		"funnel_at":           cfg.Tailscale.EnabledAt,
 	})
 }
 
@@ -656,12 +661,13 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 type settingsView struct {
 	RejectDMARCFailures bool  `json:"reject_dmarc_failures"`
 	SaveSentCopy        bool  `json:"save_sent_copy"`
+	SendViaCloudflare   bool  `json:"send_via_cloudflare"`
 	MaxMessageMB        int64 `json:"max_message_mb"`
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Cfg.Get()
-	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.MaxMessageBytes >> 20})
+	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.SendViaCloudflare, cfg.MaxMessageBytes >> 20})
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -674,9 +680,21 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, errors.New("max message size must be 1–25 MB (Cloudflare's limit is 25 MB)"))
 		return
 	}
+	// Onboard every domain before switching sending over, so mail never
+	// goes to Cloudflare for a domain it won't send for.
+	if v.SendViaCloudflare && !s.Cfg.Get().SendViaCloudflare {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+		defer cancel()
+		if err := s.Setup.EnableSending(ctx); err != nil {
+			writeErr(w, 400, fmt.Errorf("couldn't turn on Cloudflare Email Sending: %w", err))
+			return
+		}
+		s.Log.Printf("admin: sending through Cloudflare Email Sending")
+	}
 	err := s.Cfg.Update(func(c *config.Config) {
 		c.RejectDMARCFailures = v.RejectDMARCFailures
 		c.SaveSentCopy = v.SaveSentCopy
+		c.SendViaCloudflare = v.SendViaCloudflare
 		c.MaxMessageBytes = v.MaxMessageMB << 20
 	})
 	if err != nil {
