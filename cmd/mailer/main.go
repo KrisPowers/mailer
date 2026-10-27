@@ -120,6 +120,9 @@ func serve(dataDir, listenHost string) error {
 	// and sync problems.
 	sub.Trace = os.Getenv("MAILER_TRACE") == "1"
 	im.Trace = sub.Trace
+	// MAILER_IMAP_CAPS overrides the IMAP extensions advertised, to find
+	// which ones a mail app can't handle.
+	im.Caps = os.Getenv("MAILER_IMAP_CAPS")
 
 	// Mail ports listen on loopback only: the internet reaches them through
 	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients),

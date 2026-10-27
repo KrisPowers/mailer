@@ -36,7 +36,18 @@ type Server struct {
 	// Trace logs every line a client sends, and every command's result,
 	// with sign-in secrets hidden.
 	Trace bool
+	// Caps replaces the advertised extensions (DefaultCaps when empty).
+	// Every extension in AllCaps works whether advertised or not.
+	Caps string
 }
+
+// AllCaps lists every extension the server implements.
+const AllCaps = "IMAP4rev1 LITERAL+ SASL-IR ID ENABLE IDLE NAMESPACE UIDPLUS MOVE UNSELECT SPECIAL-USE CHILDREN"
+
+// DefaultCaps is what's advertised: the set Outlook's cloud sync (new
+// Outlook, outlook.com) is known to carry on with. Advertising all of
+// AllCaps, it signs in, reads the list and stalls for four minutes.
+const DefaultCaps = "IMAP4rev1 ID UIDPLUS NAMESPACE LITERAL+"
 
 // Serve accepts connections until l is closed. If terminated is true, TLS
 // was already terminated by a trusted local proxy (Tailscale Funnel) that
@@ -155,7 +166,10 @@ func (s *session) writef(format string, a ...any) {
 }
 
 func (s *session) caps() string {
-	c := "IMAP4rev1 LITERAL+ SASL-IR ID ENABLE IDLE NAMESPACE UIDPLUS MOVE UNSELECT SPECIAL-USE CHILDREN"
+	c := s.srv.Caps
+	if c == "" {
+		c = DefaultCaps
+	}
 	if !s.tls && s.srv.TLSConfig != nil {
 		c += " STARTTLS"
 	}

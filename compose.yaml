@@ -24,6 +24,9 @@ services:
       # 1 logs every command mail apps send (passwords hidden), for
       # debugging sign-in and sync problems.
       MAILER_TRACE: ${MAILER_TRACE:-0}
+      # Overrides the IMAP extensions advertised, for testing which ones a
+      # mail app can't handle. Empty means the default set.
+      MAILER_IMAP_CAPS: ${MAILER_IMAP_CAPS:-}
     logging:
       options:
         max-size: 10m
