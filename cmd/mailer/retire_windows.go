@@ -47,6 +47,24 @@ Remove-Item -Force '%[1]s\mailer.exe' -ErrorAction SilentlyContinue`, local))
 	}
 }
 
+// retireOlderBuilds stops Mailer copies started before this exe was built,
+// with their tunnel connector, so opening a new build runs it instead of
+// showing the hidden window of the old one. A copy of this same build keeps
+// running and its window is shown.
+func retireOlderBuilds(dataDir string) {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	powershell(false, fmt.Sprintf(`$built = (Get-Item -LiteralPath '%s').LastWriteTime
+$old = Get-Process mailer -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne %d -and $_.StartTime -and $_.StartTime -lt $built }
+if ($old) {
+    $old | Stop-Process -Force
+    Get-Process cloudflared -ErrorAction SilentlyContinue | Where-Object { $_.Path -like '%s\*' } | Stop-Process -Force
+    Start-Sleep -Seconds 1
+}`, exe, os.Getpid(), dataDir))
+}
+
 func dirExists(path string) bool {
 	st, err := os.Stat(path)
 	return err == nil && st.IsDir()
