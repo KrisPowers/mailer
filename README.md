@@ -13,9 +13,9 @@ Your replies ◀── mailer sends directly, DKIM-signed
 
 On Windows, right-click **`start.ps1` → Run with PowerShell** to start or update
 everything: it installs Git, Go, Node.js and Tailscale if missing, pulls the latest
-code, rebuilds the UI and server, installs it to `%ProgramData%\mailer` as a boot
-task, re-applies Cloudflare and Tailscale Funnel, and prints the status checks. Run
-it again after every update. On a first run, finish setup on the admin page it opens.
+code, rebuilds the UI and server, starts the server in that window, re-applies
+Tailscale Funnel and Cloudflare, and prints the status checks. The server runs until
+you close the window. On a first run, finish setup on the admin page it opens.
 
 Elsewhere, or by hand:
 
@@ -76,7 +76,7 @@ The admin page only listens on 127.0.0.1, so it can only be reached from the ser
 
 Everything lives in `mailer-data/` next to the binary: mail, accounts, keys, and
 settings. Back that folder up. Use `-data DIR` to put it somewhere else. `start.ps1`
-uses `%ProgramData%\mailer\data`.
+uses `%LOCALAPPDATA%\mailer\data`.
 
 ## Limits
 

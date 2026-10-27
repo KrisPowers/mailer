@@ -1,29 +1,20 @@
-# Starts or updates the whole mail server. Run it any time:
+# Starts or updates the whole mail server, in this window:
 #   - installs Git, Go, Node.js and Tailscale if they're missing
 #   - pulls the latest code
 #   - rebuilds the admin UI and the server from a copy of the code, so the
 #     checkout itself is never changed and the next pull stays clean
-#   - stops the running server and its tunnel, installs the new build and
-#     starts it as a boot task
-#   - re-applies Cloudflare (Worker, Email Routing, DNS) for every domain and
-#     Tailscale Funnel, then shows the status checks
+#   - stops the running server, then starts the new build here
+#   - re-applies Tailscale Funnel and Cloudflare (Worker, Email Routing, DNS)
+#     for every domain and shows the status checks
+# The server keeps running in this window; Ctrl+C or closing it stops it.
 #
-# The server and its data live in %ProgramData%\mailer, outside OneDrive,
-# readable only by Administrators and SYSTEM.
+# The server and its data live in %LOCALAPPDATA%\mailer, outside OneDrive.
 
 $ErrorActionPreference = "Stop"
 
-# Elevate: the boot task runs as SYSTEM and the install folder is locked down.
-$admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-    [Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $admin) {
-    Start-Process powershell -Verb RunAs -ArgumentList "-NoExit", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`""
-    exit
-}
-
 $repo = $PSScriptRoot
 $src = Join-Path $env:TEMP "mailer-src"
-$root = Join-Path $env:ProgramData "mailer"
+$root = Join-Path $env:LOCALAPPDATA "mailer"
 $exe = Join-Path $root "mailer.exe"
 $data = Join-Path $root "data"
 
@@ -33,11 +24,6 @@ function Check($what) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit code $LASTEXITCODE)" }
 }
 
-function Refresh-Path {
-    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
-        [Environment]::GetEnvironmentVariable("Path", "User")
-}
-
 # Need installs a tool with winget unless its command (or known path) exists.
 function Need($command, $wingetId, $knownPath) {
     if (Get-Command $command -ErrorAction SilentlyContinue) { return }
@@ -45,7 +31,8 @@ function Need($command, $wingetId, $knownPath) {
     Write-Host "Installing $wingetId"
     winget install --id $wingetId --exact --silent --accept-source-agreements --accept-package-agreements
     Check "winget install $wingetId"
-    Refresh-Path
+    $env:Path = [Environment]::GetEnvironmentVariable("Path", "Machine") + ";" +
+        [Environment]::GetEnvironmentVariable("Path", "User")
 }
 
 Step "Tools"
@@ -79,24 +66,35 @@ Check "go build"
 Pop-Location
 
 Step "Stopping the running server"
-# cmd does the redirect: PowerShell 5.1 turns redirected native stderr into
-# errors, which would stop this script when the task doesn't exist yet.
-cmd /c "schtasks /End /TN Mailer >nul 2>&1"
-# The task's process and the tunnel connector it started, if still around.
-Get-Process mailer, cloudflared -ErrorAction SilentlyContinue |
+# The previous version of this script ran the server as a SYSTEM boot task
+# from %ProgramData%\mailer. One admin prompt removes it and moves its data
+# here.
+cmd /c "schtasks /Query /TN Mailer >nul 2>&1"
+if ($LASTEXITCODE -eq 0) {
+    $old = Join-Path $env:ProgramData "mailer"
+    $cleanup = @"
+schtasks /End /TN Mailer | Out-Null
+schtasks /Delete /TN Mailer /F | Out-Null
+Get-Process mailer, cloudflared -ErrorAction SilentlyContinue | Where-Object { `$_.Path -like '$old\*' } | Stop-Process -Force
+Start-Sleep -Seconds 2
+if ((Test-Path '$old\data') -and -not (Test-Path '$data')) { robocopy '$old\data' '$data' /E /NFL /NDL /NJH /NJS /NP | Out-Null }
+Remove-Item -Recurse -Force '$old'
+"@
+    $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cleanup))
+    Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList "-NoProfile -EncodedCommand $enc"
+}
+# Any running copy holds the ports; its tunnel connector goes with it.
+Get-Process mailer -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process cloudflared -ErrorAction SilentlyContinue |
     Where-Object { $_.Path -and $_.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase) } |
     Stop-Process -Force
 Start-Sleep -Seconds 2
 
-Step "Installing to $root"
+Step "Starting the server"
 New-Item -ItemType Directory -Force $data | Out-Null
-icacls $root /inheritance:r /grant:r "*S-1-5-18:(OI)(CI)F" "*S-1-5-32-544:(OI)(CI)F" | Out-Null
-Check "locking down $root"
 Move-Item -Force $build $exe
-& $exe -data $data install
-Check "mailer install"
+$app = Start-Process $exe -ArgumentList "-data", "`"$data`"" -NoNewWindow -PassThru
 
-Step "Waiting for the server"
 $port = 8080
 $settings = Join-Path $data "settings.json"
 if (Test-Path $settings) {
@@ -106,13 +104,14 @@ if (Test-Path $settings) {
 $url = "http://127.0.0.1:$port"
 $headers = @{ "X-Mailer" = "1" }
 $ov = $null
-for ($i = 0; $i -lt 30 -and -not $ov; $i++) {
+for ($i = 0; $i -lt 30 -and -not $ov -and -not $app.HasExited; $i++) {
     try { $ov = Invoke-RestMethod "$url/api/overview" -TimeoutSec 5 } catch { Start-Sleep -Seconds 1 }
 }
-if (-not $ov) { throw "the server didn't answer on $url; check Task Scheduler > Mailer" }
-Write-Host "Running at $url"
+if (-not $ov) { throw "the server didn't start; see its output above" }
 
 Step "Tailscale"
+# cmd does the redirect: PowerShell 5.1 turns redirected native stderr into
+# errors, which would stop this script.
 cmd /c "`"$tailscale`" status >nul 2>&1"
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Signing in to Tailscale"
@@ -124,7 +123,7 @@ if ($r.ok) {
     Write-Host "Funnel on: $($r.dns_name) (IMAP :443, SMTP :8443)"
 } else {
     Write-Host $r.error -ForegroundColor Yellow
-    if ($r.action_url) { Write-Host "Approve here, then run this script again: $($r.action_url)" -ForegroundColor Yellow }
+    if ($r.action_url) { Write-Host "Approve here, then enable Funnel on the admin page: $($r.action_url)" -ForegroundColor Yellow }
 }
 
 Step "Cloudflare"
@@ -151,5 +150,6 @@ foreach ($item in $c.items) {
     Write-Host ("  {0,-40} {1}" -f $item.name, $item.detail) -ForegroundColor $color
 }
 
-Start-Process $url
-Write-Host "`nDone. Admin page: $url"
+Write-Host "`nMailer is running. Admin page: $url" -ForegroundColor Green
+Write-Host "Ctrl+C or closing this window stops it."
+Wait-Process -Id $app.Id
