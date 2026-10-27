@@ -80,7 +80,9 @@ export function MailFlowPopover() {
     <>
       <div className="pop-head"><Icon name="send" />Mail flow<Badge kind={k}>{healthText[k]}</Badge></div>
       <div className="pop-body">
-        <Line label="Outbound port 25">{p25 ? (p25.ok ? "open" : "blocked") : "—"}</Line>
+        {ov?.send_via_cloudflare
+          ? <Line label="Sending">through Cloudflare</Line>
+          : <Line label="Outbound port 25">{p25 ? (p25.ok ? "open" : "blocked") : "—"}</Line>}
         <Line label="Waiting to send">{ov?.queue ?? 0}</Line>
         <Line label="Last received">{timeAgo(ov?.last_inbound)}</Line>
       </div>
