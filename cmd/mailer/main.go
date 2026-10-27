@@ -170,7 +170,7 @@ func serve(dataDir string) error {
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)
 	logger.Printf("mailer running. Admin page: %s", url)
-	if cfg.Cloudflare.ZoneID == "" {
+	if !cfg.Connected() {
 		openBrowser(url)
 	}
 	<-ctx.Done()
@@ -178,11 +178,11 @@ func serve(dataDir string) error {
 	return nil
 }
 
-// syncDNS keeps the SPF record and HELO hostname pointed at our current
+// syncDNS keeps every domain's SPF record and the HELO hostname pointed at our current
 // public IP, which can change on a home connection.
 func syncDNS(ctx context.Context, setup *cloudflare.Setup, cfgm *config.Manager, logger *log.Logger) {
 	for {
-		if cfgm.Get().Cloudflare.ZoneID != "" {
+		if cfg := cfgm.Get(); cfg.Connected() {
 			c, cancel := context.WithTimeout(ctx, time.Minute)
 			if _, err := setup.SyncDNS(c); err != nil {
 				logger.Printf("dns: %v", err)

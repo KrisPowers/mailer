@@ -10,6 +10,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,16 +18,33 @@ import (
 	"mailer/internal/config"
 )
 
-// fakeCF implements the slice of the Cloudflare API that Setup uses.
+// fakeCF implements the slice of the Cloudflare API that Setup uses, for
+// two zones in one account.
 type fakeCF struct {
 	mu       sync.Mutex
-	records  map[string]Record
+	zones    map[string]string            // zone ID -> name
+	records  map[string]map[string]Record // zone ID -> record ID -> record
 	nextID   int
 	tunnels  int
-	routing  bool
-	catchAll string
+	routing  map[string]bool
+	catchAll map[string]string // zone ID -> worker, "" when off
 	worker   map[string]any
 	script   string
+}
+
+func newFake() *fakeCF {
+	f := &fakeCF{zones: map[string]string{"z1": "example.com", "z2": "example.org"},
+		records: map[string]map[string]Record{}, routing: map[string]bool{}, catchAll: map[string]string{}}
+	for id := range f.zones {
+		f.records[id] = map[string]Record{}
+	}
+	return f
+}
+
+func (f *fakeCF) add(zone string, r Record) {
+	f.nextID++
+	r.ID = fmt.Sprint(f.nextID)
+	f.records[zone][r.ID] = r
 }
 
 func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -37,6 +55,14 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"success":true,"errors":[],"result":%s}`, b)
 	}
 	p := r.URL.Path
+	zone, rest := "", ""
+	if after, found := strings.CutPrefix(p, "/zones/"); found {
+		zone, rest, _ = strings.Cut(after, "/")
+		if _, known := f.zones[zone]; !known {
+			http.Error(w, "unknown zone "+zone, 404)
+			return
+		}
+	}
 	switch {
 	case p == "/user/tokens/verify":
 		if r.Header.Get("Authorization") != "Bearer good-token" {
@@ -45,36 +71,38 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		ok(map[string]string{"status": "active"})
 	case p == "/zones":
-		ok([]map[string]any{{"id": "z1", "name": "example.com", "account": map[string]string{"id": "a1"}}})
+		var out []map[string]any
+		for _, id := range []string{"z1", "z2"} {
+			out = append(out, map[string]any{"id": id, "name": f.zones[id], "account": map[string]string{"id": "a1"}})
+		}
+		ok(out)
 	case p == "/accounts/a1/cfd_tunnel" && r.Method == "POST":
 		f.tunnels++
-		ok(map[string]any{"id": "t1", "name": "mailer"})
+		ok(map[string]any{"id": "t1", "name": "mail"})
 	case p == "/accounts/a1/cfd_tunnel/t1" && r.Method == "GET":
 		ok(map[string]any{"id": "t1", "status": "healthy", "connections": []any{map[string]string{}}})
 	case p == "/accounts/a1/cfd_tunnel/t1/token":
 		ok("tunnel-token")
 	case p == "/accounts/a1/cfd_tunnel/t1/configurations":
 		ok(map[string]any{})
-	case p == "/zones/z1/dns_records" && r.Method == "GET":
-		var out []Record
-		for _, rec := range f.records {
+	case rest == "dns_records" && r.Method == "GET":
+		out := []Record{}
+		for _, rec := range f.records[zone] {
 			if rec.Type == r.URL.Query().Get("type") && rec.Name == r.URL.Query().Get("name") {
 				out = append(out, rec)
 			}
 		}
 		ok(out)
-	case p == "/zones/z1/dns_records" && r.Method == "POST":
+	case rest == "dns_records" && r.Method == "POST":
 		var rec Record
 		json.NewDecoder(r.Body).Decode(&rec)
-		f.nextID++
-		rec.ID = fmt.Sprint(f.nextID)
-		f.records[rec.ID] = rec
+		f.add(zone, rec)
 		ok(rec)
-	case strings.HasPrefix(p, "/zones/z1/dns_records/") && r.Method == "PUT":
+	case strings.HasPrefix(rest, "dns_records/") && r.Method == "PUT":
 		var rec Record
 		json.NewDecoder(r.Body).Decode(&rec)
-		rec.ID = strings.TrimPrefix(p, "/zones/z1/dns_records/")
-		f.records[rec.ID] = rec
+		rec.ID = strings.TrimPrefix(rest, "dns_records/")
+		f.records[zone][rec.ID] = rec
 		ok(rec)
 	case strings.HasPrefix(p, "/accounts/a1/workers/scripts/"):
 		_, params, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -92,30 +120,42 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		ok(map[string]any{})
-	case p == "/zones/z1/email/routing" && r.Method == "GET":
-		ok(map[string]any{"enabled": f.routing, "status": map[bool]string{true: "ready", false: "unconfigured"}[f.routing]})
-	case p == "/zones/z1/email/routing/dns":
-		f.routing = true
+	case rest == "email/routing" && r.Method == "GET":
+		ok(map[string]any{"enabled": f.routing[zone], "status": map[bool]string{true: "ready", false: "unconfigured"}[f.routing[zone]]})
+	case rest == "email/routing/dns":
+		f.routing[zone] = true
 		// Cloudflare publishes its MX and SPF records when enabling.
-		f.nextID++
-		f.records[fmt.Sprint(f.nextID)] = Record{ID: fmt.Sprint(f.nextID), Type: "TXT", Name: "example.com",
-			Content: `"v=spf1 include:_spf.mx.cloudflare.net ~all"`}
+		name := f.zones[zone]
+		for _, mx := range []string{"route1.mx.cloudflare.net", "route2.mx.cloudflare.net"} {
+			f.add(zone, Record{Type: "MX", Name: name, Content: mx})
+		}
+		f.add(zone, Record{Type: "TXT", Name: name, Content: `"v=spf1 include:_spf.mx.cloudflare.net ~all"`})
 		ok(map[string]any{})
-	case p == "/zones/z1/email/routing/rules/catch_all" && r.Method == "PUT":
+	case rest == "email/routing/rules/catch_all" && r.Method == "PUT":
 		var body struct {
-			Actions []struct{ Value []string } `json:"actions"`
+			Enabled bool
+			Actions []struct {
+				Type  string
+				Value []string
+			} `json:"actions"`
 		}
 		json.NewDecoder(r.Body).Decode(&body)
-		f.catchAll = body.Actions[0].Value[0]
+		f.catchAll[zone] = ""
+		if body.Enabled && body.Actions[0].Type == "worker" {
+			f.catchAll[zone] = body.Actions[0].Value[0]
+		}
 		ok(map[string]any{})
+	case rest == "email/routing/rules/catch_all" && r.Method == "GET":
+		target := f.catchAll[zone]
+		ok(map[string]any{"enabled": target != "", "actions": []map[string]any{{"type": "worker", "value": []string{target}}}})
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+p, 404)
 	}
 }
 
-func (f *fakeCF) find(typ, name string) []Record {
+func (f *fakeCF) find(zone, typ, name string) []Record {
 	var out []Record
-	for _, r := range f.records {
+	for _, r := range f.records[zone] {
 		if r.Type == typ && r.Name == name {
 			out = append(out, r)
 		}
@@ -124,7 +164,7 @@ func (f *fakeCF) find(typ, name string) []Record {
 }
 
 func TestConnect(t *testing.T) {
-	fake := &fakeCF{records: map[string]Record{}}
+	fake := newFake()
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	apiBase = srv.URL
@@ -135,27 +175,34 @@ func TestConnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Setup{Cfg: cfgm, Log: log.New(io.Discard, "", 0),
-		DKIMRecord: func(d string) (string, error) { return "v=DKIM1; k=rsa; p=KEY", nil }}
+		DKIMRecord: func(d string) (string, error) { return "v=DKIM1; k=rsa; p=KEY-" + d, nil }}
+	ctx := context.Background()
 
-	if _, err := s.Connect(context.Background(), "bad-token", ""); err == nil {
+	if _, err := s.Connect(ctx, "bad-token", ""); err == nil {
 		t.Fatal("bad token accepted")
 	}
-	for i := 0; i < 2; i++ { // second run must be a no-op repair
-		steps, err := s.Connect(context.Background(), "good-token", "")
-		if err != nil {
-			t.Fatalf("run %d: %v %+v", i, err, steps)
+	if _, err := s.Connect(ctx, "good-token", ""); err == nil {
+		t.Fatal("two zones visible but no choice asked for")
+	}
+	// The second run of each must be a no-op repair.
+	for _, zone := range []string{"example.com", "example.com", "example.org", "example.org"} {
+		if steps, err := s.Connect(ctx, "good-token", zone); err != nil {
+			t.Fatalf("%s: %v %+v", zone, err, steps)
 		}
 	}
 
 	cfg := cfgm.Get()
-	if cfg.Domain() != "example.com" || cfg.Hostname != "mail.example.com" || cfg.Cloudflare.TunnelToken != "tunnel-token" {
+	if !slices.Equal(cfg.Domains, []string{"example.com", "example.org"}) || cfg.Hostname != "mail.example.com" ||
+		cfg.Cloudflare.TunnelToken != "tunnel-token" || cfg.Cloudflare.InboundHost != "mail-in.example.com" {
 		t.Errorf("config not saved: %+v", cfg)
 	}
 	if fake.tunnels != 1 {
-		t.Errorf("created %d tunnels, want 1 (reuse on repair)", fake.tunnels)
+		t.Errorf("created %d tunnels, want 1 (shared, reused on repair)", fake.tunnels)
 	}
-	if fake.catchAll != cfg.Cloudflare.WorkerName || !fake.routing {
-		t.Errorf("email routing: enabled=%v catch-all=%q", fake.routing, fake.catchAll)
+	for _, z := range []string{"z1", "z2"} {
+		if fake.catchAll[z] != workerName || !fake.routing[z] {
+			t.Errorf("%s email routing: enabled=%v catch-all=%q", z, fake.routing[z], fake.catchAll[z])
+		}
 	}
 	if !strings.Contains(fake.script, "async email(message, env") {
 		t.Error("worker script not uploaded")
@@ -167,9 +214,9 @@ func TestConnect(t *testing.T) {
 		}
 	}
 
-	check := func(typ, name, content string) {
+	check := func(zone, typ, name, content string) {
 		t.Helper()
-		recs := fake.find(typ, name)
+		recs := fake.find(zone, typ, name)
 		if len(recs) != 1 {
 			t.Errorf("%s %s: %d records, want 1", typ, name, len(recs))
 			return
@@ -178,23 +225,66 @@ func TestConnect(t *testing.T) {
 			t.Errorf("%s %s = %q, want %q", typ, name, recs[0].Content, content)
 		}
 	}
-	check("CNAME", "mail-in.example.com", "t1.cfargotunnel.com")
-	check("TXT", "mail._domainkey.example.com", "v=DKIM1; k=rsa; p=KEY")
-	check("TXT", "_dmarc.example.com", "v=DMARC1; p=quarantine; adkim=r; aspf=r")
-	check("TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ip4:203.0.113.50 ~all")
-	check("A", "mail.example.com", "203.0.113.50")
-	if a := fake.find("A", "mail.example.com"); len(a) == 1 && (a[0].Proxied == nil || *a[0].Proxied) {
+	check("z1", "CNAME", "mail-in.example.com", "t1.cfargotunnel.com")
+	check("z1", "A", "mail.example.com", "203.0.113.50")
+	for z, d := range map[string]string{"z1": "example.com", "z2": "example.org"} {
+		check(z, "TXT", "mail._domainkey."+d, "v=DKIM1; k=rsa; p=KEY-"+d)
+		check(z, "TXT", "_dmarc."+d, defaultDMARC)
+		check(z, "TXT", d, "v=spf1 include:_spf.mx.cloudflare.net ip4:203.0.113.50 ~all")
+	}
+	if len(fake.find("z2", "A", "mail.example.org"))+len(fake.find("z2", "CNAME", "mail-in.example.org")) != 0 {
+		t.Error("secondary domain got its own hostname or tunnel")
+	}
+	if a := fake.find("z1", "A", "mail.example.com"); len(a) == 1 && (a[0].Proxied == nil || *a[0].Proxied) {
 		t.Error("A record must not be proxied")
 	}
-	if c := fake.find("CNAME", "mail-in.example.com"); len(c) == 1 && (c[0].Proxied == nil || !*c[0].Proxied) {
+	if c := fake.find("z1", "CNAME", "mail-in.example.com"); len(c) == 1 && (c[0].Proxied == nil || !*c[0].Proxied) {
 		t.Error("tunnel CNAME must be proxied")
 	}
 
-	// IP change: SPF and A follow, old IP removed.
+	st := s.CheckStatus(ctx, func(context.Context, string) error { return nil })
+	if !st.Connected || st.TunnelStatus != "healthy" || len(st.Domains) != 2 {
+		t.Fatalf("status: %+v", st)
+	}
+	for _, d := range st.Domains {
+		if !d.OK() || len(d.Checks) != 6 {
+			t.Errorf("%s not compliant: %+v", d.Name, d.Checks)
+		}
+	}
+
+	// IP change: SPF and A follow on every domain, old IP removed.
 	publicIP = func(context.Context) (string, error) { return "198.51.100.77", nil }
-	if _, err := s.SyncDNS(context.Background()); err != nil {
+	if _, err := s.SyncDNS(ctx); err != nil {
 		t.Fatal(err)
 	}
-	check("TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ip4:198.51.100.77 ~all")
-	check("A", "mail.example.com", "198.51.100.77")
+	check("z1", "TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ip4:198.51.100.77 ~all")
+	check("z2", "TXT", "example.org", "v=spf1 include:_spf.mx.cloudflare.net ip4:198.51.100.77 ~all")
+	check("z1", "A", "mail.example.com", "198.51.100.77")
+
+	// A drifted record shows up as a failed check.
+	for id, r := range fake.records["z2"] {
+		if r.Name == "mail._domainkey.example.org" {
+			r.Content = "v=DKIM1; k=rsa; p=OTHER"
+			fake.records["z2"][id] = r
+		}
+	}
+	st = s.CheckStatus(ctx, func(context.Context, string) error { return nil })
+	if !st.Domains[0].OK() || st.Domains[1].OK() {
+		t.Errorf("DKIM drift not caught: %+v", st.Domains)
+	}
+
+	if _, err := s.Disconnect(ctx, "example.com"); err == nil {
+		t.Error("primary domain removed")
+	}
+	cfgm.Update(func(c *config.Config) { c.Aliases["hi@example.org"] = "x@example.com" })
+	if warning, err := s.Disconnect(ctx, "example.org"); err != nil || warning != "" {
+		t.Fatalf("disconnect: %q %v", warning, err)
+	}
+	cfg = cfgm.Get()
+	if !slices.Equal(cfg.Domains, []string{"example.com"}) || len(cfg.Cloudflare.Zones) != 1 || len(cfg.Aliases) != 0 {
+		t.Errorf("after disconnect: %+v", cfg)
+	}
+	if fake.catchAll["z2"] != "" || fake.catchAll["z1"] != workerName {
+		t.Errorf("catch-all after disconnect: %v", fake.catchAll)
+	}
 }

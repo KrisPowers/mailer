@@ -8,8 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"mailer/internal/config"
@@ -33,8 +34,8 @@ type ZoneChoiceError struct{ Zones []string }
 
 func (e *ZoneChoiceError) Error() string { return "choose which domain to use" }
 
-// Setup performs the one-time Cloudflare configuration and the periodic DNS
-// upkeep.
+// Setup performs the Cloudflare configuration for each domain and the
+// periodic DNS upkeep.
 type Setup struct {
 	Cfg *config.Manager
 	// DKIMRecord returns the DKIM TXT value for a domain, creating its key
@@ -45,10 +46,15 @@ type Setup struct {
 
 const spfInclude = "include:_spf.mx.cloudflare.net"
 
-var workerNameRe = regexp.MustCompile(`[^a-z0-9-]+`)
+// workerName is the Email Worker deployed to each Cloudflare account. All
+// domains in an account share it.
+const workerName = "email-inbound"
 
-// Connect configures everything Cloudflare-side for zoneName using token.
-// It is idempotent: running it again repairs whatever is missing.
+// Connect connects zoneName (or the token's only zone) to this server:
+// tunnel, Email Worker, Email Routing, DKIM, DMARC and SPF. The first
+// domain connected is the primary: it carries the server's hostname and
+// the tunnel's inbound address. Connect is idempotent: running it again
+// repairs whatever is missing.
 func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, error) {
 	var steps []Step
 	fail := func(name string, err error) ([]Step, error) {
@@ -57,7 +63,8 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	}
 	done := func(name, detail string) { steps = append(steps, Step{Name: name, OK: true, Detail: detail}) }
 
-	c := New(strings.TrimSpace(token))
+	token = strings.TrimSpace(token)
+	c := New(token)
 	if err := c.Verify(ctx); err != nil {
 		return fail("Check API token", err)
 	}
@@ -88,69 +95,62 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	done("Find domain", domain)
 
 	cfg := s.Cfg.Get()
-	inboundHost := "mail-in." + domain
-
-	// Tunnel: reuse ours if it still exists.
-	var tunnel *Tunnel
-	if cfg.Cloudflare.TunnelID != "" && cfg.Cloudflare.AccountID == acct {
-		if t, err := c.GetTunnel(ctx, acct, cfg.Cloudflare.TunnelID); err == nil && t.DeletedAt == nil {
-			tunnel = t
-		}
+	primary := !cfg.Connected() || domain == cfg.Domain()
+	tunnelAcct, tunnelZone, inboundHost := cfg.Cloudflare.AccountID, cfg.Cloudflare.Zones[cfg.Domain()].ID, cfg.Cloudflare.InboundHost
+	if primary {
+		tunnelAcct, tunnelZone, inboundHost = acct, zone.ID, "mail-in."+domain
 	}
-	if tunnel == nil {
-		suffix := make([]byte, 3)
-		rand.Read(suffix)
-		if tunnel, err = c.CreateTunnel(ctx, acct, "mailer-"+domain+"-"+hex.EncodeToString(suffix)); err != nil {
-			return fail("Create tunnel", err)
-		}
-	}
-	tunnelToken, err := c.TunnelToken(ctx, acct, tunnel.ID)
+	tunnelID, tunnelToken, err := s.ensureTunnel(ctx, c, tunnelAcct, tunnelZone, inboundHost)
 	if err != nil {
-		return fail("Create tunnel", err)
-	}
-	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, inboundHost,
-		fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)); err != nil {
-		return fail("Create tunnel", err)
-	}
-	on := true
-	if err := c.UpsertRecord(ctx, zone.ID, Record{Type: "CNAME", Name: inboundHost,
-		Content: tunnel.ID + ".cfargotunnel.com", TTL: 1, Proxied: &on}, nil); err != nil {
 		return fail("Create tunnel", err)
 	}
 	done("Create tunnel", inboundHost)
 
-	workerName := strings.Trim(workerNameRe.ReplaceAllString("mailer-inbound-"+domain, "-"), "-")
-	if len(workerName) > 63 {
-		workerName = workerName[:63]
+	worker := cfg.Cloudflare.Zones[domain].WorkerName
+	if worker == "" {
+		worker = workerName
 	}
-	if err := c.UploadWorker(ctx, acct, workerName, workerJS,
+	if err := c.UploadWorker(ctx, acct, worker, workerJS,
 		map[string]string{"INBOUND_URL": "https://" + inboundHost + "/inbound"},
 		map[string]string{"INBOUND_SECRET": cfg.Cloudflare.InboundSecret}); err != nil {
 		return fail("Deploy email Worker", err)
 	}
-	done("Deploy email Worker", workerName)
+	done("Deploy email Worker", worker)
 
 	if err := c.EnableEmailRouting(ctx, zone.ID, domain); err != nil {
 		return fail("Turn on Email Routing", fmt.Errorf("%w (if this domain already has MX records from another mail provider, remove them first)", err))
 	}
-	if err := c.RouteAllToWorker(ctx, zone.ID, workerName); err != nil {
+	if err := c.RouteAllToWorker(ctx, zone.ID, worker); err != nil {
 		return fail("Turn on Email Routing", err)
 	}
 	done("Turn on Email Routing", "all mail for @"+domain+" → this server")
 
+	now := time.Now()
 	if err := s.Cfg.Update(func(c *config.Config) {
 		if !c.IsLocalDomain(domain) {
-			c.Domains = append([]string{domain}, c.Domains...)
+			if primary {
+				c.Domains = append([]string{domain}, c.Domains...)
+			} else {
+				c.Domains = append(c.Domains, domain)
+			}
 		}
-		c.Hostname = "mail." + domain
-		c.Cloudflare.Token = strings.TrimSpace(token)
-		c.Cloudflare.AccountID = acct
-		c.Cloudflare.ZoneID = zone.ID
-		c.Cloudflare.TunnelID = tunnel.ID
+		z := c.Cloudflare.Zones[domain]
+		z.ID, z.AccountID, z.WorkerName = zone.ID, acct, worker
+		if z.ConnectedAt.IsZero() {
+			z.ConnectedAt = now
+		}
+		c.Cloudflare.Zones[domain] = z
+		c.Cloudflare.Token = token
+		c.Cloudflare.TunnelID = tunnelID
 		c.Cloudflare.TunnelToken = tunnelToken
-		c.Cloudflare.InboundHost = inboundHost
-		c.Cloudflare.WorkerName = workerName
-		c.Cloudflare.ConnectedAt = time.Now()
+		if primary {
+			c.Hostname = "mail." + domain
+			c.Cloudflare.AccountID = acct
+			c.Cloudflare.InboundHost = inboundHost
+			if c.Cloudflare.ConnectedAt.IsZero() {
+				c.Cloudflare.ConnectedAt = now
+			}
+		}
 	}); err != nil {
 		return fail("Save settings", err)
 	}
@@ -160,7 +160,10 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	}
 	done("Publish DKIM / DMARC", "")
 
-	ip, err := s.SyncDNS(ctx)
+	ip, err := publicIP(ctx)
+	if err == nil {
+		err = s.syncDomain(ctx, s.Cfg.Get(), domain, ip)
+	}
 	if err != nil {
 		return fail("Publish sending IP (SPF)", err)
 	}
@@ -169,12 +172,81 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	return steps, nil
 }
 
+// ensureTunnel reuses our tunnel if it still exists in acct (or creates
+// one) and routes host to the local inbound port through it.
+func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host string) (id, token string, err error) {
+	cfg := s.Cfg.Get()
+	var tunnel *Tunnel
+	if cfg.Cloudflare.TunnelID != "" && cfg.Cloudflare.AccountID == acct {
+		if t, err := c.GetTunnel(ctx, acct, cfg.Cloudflare.TunnelID); err == nil && t.DeletedAt == nil {
+			tunnel = t
+		}
+	}
+	if tunnel == nil {
+		suffix := make([]byte, 3)
+		rand.Read(suffix)
+		if tunnel, err = c.CreateTunnel(ctx, acct, "mail-"+hex.EncodeToString(suffix)); err != nil {
+			return "", "", err
+		}
+	}
+	if token, err = c.TunnelToken(ctx, acct, tunnel.ID); err != nil {
+		return "", "", err
+	}
+	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, host,
+		fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)); err != nil {
+		return "", "", err
+	}
+	on := true
+	if err := c.UpsertRecord(ctx, zoneID, Record{Type: "CNAME", Name: host,
+		Content: tunnel.ID + ".cfargotunnel.com", TTL: 1, Proxied: &on}, nil); err != nil {
+		return "", "", err
+	}
+	return tunnel.ID, token, nil
+}
+
+// Disconnect stops receiving mail for a secondary domain: its catch-all
+// rule is turned off in Cloudflare, and the domain and its aliases are
+// removed here. DNS records and accounts are left alone. The removal
+// happens even if Cloudflare can't be reached, which the warning reports.
+func (s *Setup) Disconnect(ctx context.Context, domain string) (warning string, err error) {
+	cfg := s.Cfg.Get()
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	if !cfg.IsLocalDomain(domain) {
+		return "", fmt.Errorf("%s isn't one of your domains", domain)
+	}
+	if domain == cfg.Domain() {
+		return "", errors.New("the primary domain carries the server's hostname and tunnel, so it can't be removed")
+	}
+	var cfErr error
+	if z, ok := cfg.Cloudflare.Zones[domain]; ok {
+		cfErr = New(cfg.Cloudflare.Token).DisableCatchAll(ctx, z.ID)
+	}
+	if err := s.Cfg.Update(func(c *config.Config) {
+		c.Domains = slices.DeleteFunc(c.Domains, func(d string) bool { return d == domain })
+		delete(c.Cloudflare.Zones, domain)
+		for alias := range c.Aliases {
+			if strings.HasSuffix(alias, "@"+domain) {
+				delete(c.Aliases, alias)
+			}
+		}
+	}); err != nil {
+		return "", err
+	}
+	s.Log.Printf("cloudflare: removed %s", domain)
+	if cfErr != nil {
+		return "Email Routing is still on in Cloudflare: " + cfErr.Error(), nil
+	}
+	return "", nil
+}
+
 func unquote(s string) string {
 	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
 		return strings.ReplaceAll(s[1:len(s)-1], `" "`, "")
 	}
 	return s
 }
+
+const defaultDMARC = "v=DMARC1; p=quarantine; adkim=r; aspf=r"
 
 func (s *Setup) publishAuthRecords(ctx context.Context, c *Client, zoneID, domain string) error {
 	cfg := s.Cfg.Get()
@@ -196,31 +268,45 @@ func (s *Setup) publishAuthRecords(ctx context.Context, c *Client, zoneID, domai
 			return nil
 		}
 	}
-	_, err = c.CreateRecord(ctx, zoneID, Record{Type: "TXT", Name: "_dmarc." + domain,
-		Content: "v=DMARC1; p=quarantine; adkim=r; aspf=r", TTL: 1})
+	_, err = c.CreateRecord(ctx, zoneID, Record{Type: "TXT", Name: "_dmarc." + domain, Content: defaultDMARC, TTL: 1})
 	return err
 }
 
 // SyncDNS publishes this machine's current public IP as the A record for the
-// HELO hostname and in the domain's SPF record, so replies sent directly
+// HELO hostname and in every domain's SPF record, so replies sent directly
 // from home authenticate. It returns the IP.
 func (s *Setup) SyncDNS(ctx context.Context) (string, error) {
 	cfg := s.Cfg.Get()
-	if cfg.Cloudflare.ZoneID == "" {
+	if !cfg.Connected() {
 		return "", errors.New("Cloudflare is not connected")
 	}
-	c := New(cfg.Cloudflare.Token)
 	ip, err := publicIP(ctx)
 	if err != nil {
 		return "", err
 	}
-	domain := cfg.Domain()
-	if _, err := c.UpsertA(ctx, cfg.Cloudflare.ZoneID, cfg.Hostname, ip); err != nil {
-		return "", err
+	var errs []error
+	for _, d := range cfg.Domains {
+		if err := s.syncDomain(ctx, cfg, d, ip); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", d, err))
+		}
 	}
-	recs, err := c.ListRecords(ctx, cfg.Cloudflare.ZoneID, "TXT", domain)
+	return ip, errors.Join(errs...)
+}
+
+func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip string) error {
+	z, ok := cfg.Cloudflare.Zones[domain]
+	if !ok {
+		return nil
+	}
+	c := New(cfg.Cloudflare.Token)
+	if domain == cfg.Domain() {
+		if _, err := c.UpsertA(ctx, z.ID, cfg.Hostname, ip); err != nil {
+			return err
+		}
+	}
+	recs, err := c.ListRecords(ctx, z.ID, "TXT", domain)
 	if err != nil {
-		return "", err
+		return err
 	}
 	existing := ""
 	for _, r := range recs {
@@ -229,18 +315,23 @@ func (s *Setup) SyncDNS(ctx context.Context) (string, error) {
 			break
 		}
 	}
-	want := MergeSPF(existing, ip, cfg.Cloudflare.SPFIP)
+	want := MergeSPF(existing, ip, z.SPFIP)
 	if want != existing {
-		if err := c.UpsertRecord(ctx, cfg.Cloudflare.ZoneID, Record{Type: "TXT", Name: domain, Content: want, TTL: 1},
+		if err := c.UpsertRecord(ctx, z.ID, Record{Type: "TXT", Name: domain, Content: want, TTL: 1},
 			func(r Record) bool { return strings.HasPrefix(unquote(r.Content), "v=spf1") }); err != nil {
-			return "", err
+			return err
 		}
 		s.Log.Printf("dns: SPF for %s is now %q", domain, want)
 	}
-	if cfg.Cloudflare.SPFIP != ip {
-		s.Cfg.Update(func(c *config.Config) { c.Cloudflare.SPFIP = ip })
+	if z.SPFIP != ip {
+		s.Cfg.Update(func(c *config.Config) {
+			if cur, ok := c.Cloudflare.Zones[domain]; ok {
+				cur.SPFIP = ip
+				c.Cloudflare.Zones[domain] = cur
+			}
+		})
 	}
-	return ip, nil
+	return nil
 }
 
 // MergeSPF returns existing with Cloudflare's include and ip4:newIP present,
@@ -283,47 +374,167 @@ func MergeSPF(existing, newIP, oldIP string) string {
 
 // Status is a snapshot of the Cloudflare side for the admin UI.
 type Status struct {
-	Connected     bool   `json:"connected"`
-	Domain        string `json:"domain"`
-	TunnelStatus  string `json:"tunnel_status"`
-	TunnelConns   int    `json:"tunnel_connections"`
-	EmailRouting  string `json:"email_routing"`
-	CatchAllOK    bool   `json:"catch_all_ok"`
-	PublicHealthy bool   `json:"public_healthy"`
-	Error         string `json:"error,omitempty"`
+	Connected     bool           `json:"connected"`
+	Domain        string         `json:"domain"` // primary
+	TunnelStatus  string         `json:"tunnel_status"`
+	TunnelConns   int            `json:"tunnel_connections"`
+	PublicHealthy bool           `json:"public_healthy"`
+	Domains       []DomainStatus `json:"domains"`
+	Error         string         `json:"error,omitempty"`
+}
+
+// DomainStatus is one domain's Email Routing state and the DNS records it
+// needs to receive and send mail.
+type DomainStatus struct {
+	Name      string `json:"name"`
+	Primary   bool   `json:"primary"`
+	AccountID string `json:"account_id"`
+	Checks    []Step `json:"checks"`
+	Error     string `json:"error,omitempty"`
+}
+
+// OK reports whether every check passed.
+func (d DomainStatus) OK() bool {
+	if d.Error != "" || len(d.Checks) == 0 {
+		return false
+	}
+	for _, c := range d.Checks {
+		if !c.OK {
+			return false
+		}
+	}
+	return true
 }
 
 // CheckStatus queries Cloudflare and probes the public inbound URL.
 func (s *Setup) CheckStatus(ctx context.Context, probe func(ctx context.Context, url string) error) Status {
 	cfg := s.Cfg.Get()
-	st := Status{Domain: cfg.Domain()}
-	if cfg.Cloudflare.ZoneID == "" {
+	st := Status{Domain: cfg.Domain(), Domains: []DomainStatus{}}
+	if !cfg.Connected() {
 		return st
 	}
 	st.Connected = true
 	c := New(cfg.Cloudflare.Token)
-	var errs []string
+	st.Domains = make([]DomainStatus, len(cfg.Domains))
+	var wg sync.WaitGroup
+	for i, d := range cfg.Domains {
+		wg.Go(func() { st.Domains[i] = s.checkDomain(ctx, c, cfg, d) })
+	}
 	if t, err := c.GetTunnel(ctx, cfg.Cloudflare.AccountID, cfg.Cloudflare.TunnelID); err != nil {
-		errs = append(errs, err.Error())
+		st.Error = err.Error()
 	} else {
 		st.TunnelStatus, st.TunnelConns = t.Status, len(t.Connections)
 	}
-	if er, err := c.EmailRoutingStatus(ctx, cfg.Cloudflare.ZoneID); err != nil {
-		errs = append(errs, err.Error())
+	st.PublicHealthy = probe(ctx, "https://"+cfg.Cloudflare.InboundHost+"/health") == nil
+	wg.Wait()
+	return st
+}
+
+// checkDomain verifies a domain's Email Routing and its MX, SPF, DKIM and
+// DMARC records, reading the records from Cloudflare rather than DNS so
+// changes show up without waiting for caches.
+func (s *Setup) checkDomain(ctx context.Context, c *Client, cfg config.Config, domain string) DomainStatus {
+	ds := DomainStatus{Name: domain, Primary: domain == cfg.Domain(), Checks: []Step{}}
+	z, ok := cfg.Cloudflare.Zones[domain]
+	if !ok {
+		ds.Error = "not connected to Cloudflare"
+		return ds
+	}
+	ds.AccountID = z.AccountID
+	add := func(name string, ok bool, detail string) { ds.Checks = append(ds.Checks, Step{name, ok, detail}) }
+	txt := func(name, prefix string) ([]string, error) {
+		recs, err := c.ListRecords(ctx, z.ID, "TXT", name)
+		var out []string
+		for _, r := range recs {
+			if v := unquote(r.Content); strings.HasPrefix(v, prefix) {
+				out = append(out, v)
+			}
+		}
+		return out, err
+	}
+
+	if er, err := c.EmailRoutingStatus(ctx, z.ID); err != nil {
+		add("Email Routing", false, err.Error())
 	} else {
-		st.EmailRouting = er.Status
-		if !er.Enabled {
-			st.EmailRouting = "disabled"
+		add("Email Routing", er.Enabled && er.Status == "ready", orNone(er.Status))
+	}
+
+	if w, enabled, err := c.CatchAllWorker(ctx, z.ID); err != nil {
+		add("Catch-all to Worker", false, err.Error())
+	} else {
+		detail := "points at " + orNone(w)
+		if !enabled {
+			detail = "turned off"
+		}
+		add("Catch-all to Worker", enabled && w == z.WorkerName, detail)
+	}
+
+	if mx, err := c.ListRecords(ctx, z.ID, "MX", domain); err != nil {
+		add("MX", false, err.Error())
+	} else {
+		var hosts []string
+		ok := len(mx) > 0
+		for _, r := range mx {
+			hosts = append(hosts, r.Content)
+			ok = ok && strings.HasSuffix(strings.TrimSuffix(r.Content, "."), ".mx.cloudflare.net")
+		}
+		detail := strings.Join(hosts, ", ")
+		if len(mx) == 0 {
+			detail = "missing"
+		} else if !ok {
+			detail = "not all Cloudflare: " + detail
+		}
+		add("MX", ok, detail)
+	}
+
+	if spf, err := txt(domain, "v=spf1"); err != nil {
+		add("SPF", false, err.Error())
+	} else {
+		switch {
+		case len(spf) == 0:
+			add("SPF", false, "missing")
+		case len(spf) > 1:
+			add("SPF", false, "more than one SPF record")
+		default:
+			ok := strings.Contains(spf[0], spfInclude) && (z.SPFIP == "" || strings.Contains(spf[0], "ip4:"+z.SPFIP))
+			add("SPF", ok, spf[0])
 		}
 	}
-	if w, enabled, err := c.CatchAllWorker(ctx, cfg.Cloudflare.ZoneID); err != nil {
-		errs = append(errs, err.Error())
-	} else {
-		st.CatchAllOK = enabled && w == cfg.Cloudflare.WorkerName
+
+	if s.DKIMRecord != nil {
+		name := cfg.DKIMSelector + "._domainkey." + domain
+		want, err := s.DKIMRecord(domain)
+		got, err2 := txt(name, "")
+		switch {
+		case err != nil || err2 != nil:
+			add("DKIM", false, errors.Join(err, err2).Error())
+		case slices.ContainsFunc(got, func(v string) bool { return compact(v) == compact(want) }):
+			add("DKIM", true, name)
+		case len(got) == 0:
+			add("DKIM", false, name+" missing")
+		default:
+			add("DKIM", false, name+" doesn't match this server's key")
+		}
 	}
-	st.PublicHealthy = probe(ctx, "https://"+cfg.Cloudflare.InboundHost+"/health") == nil
-	if len(errs) > 0 {
-		st.Error = strings.Join(errs, "; ")
+
+	switch dmarc, err := txt("_dmarc."+domain, "v=DMARC1"); {
+	case err != nil:
+		add("DMARC", false, err.Error())
+	case len(dmarc) == 0:
+		add("DMARC", false, "missing")
+	case len(dmarc) > 1:
+		add("DMARC", false, "more than one DMARC record")
+	default:
+		add("DMARC", true, dmarc[0])
 	}
-	return st
+	return ds
+}
+
+func compact(s string) string { return strings.Join(strings.Fields(s), "") }
+
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
 }
