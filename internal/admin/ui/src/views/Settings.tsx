@@ -61,11 +61,6 @@ export function Settings() {
             <Switch title="Reject DMARC failures" checked={s.reject_dmarc_failures} onChange={(v) => put({ reject_dmarc_failures: v })}>
               Refuse mail that fails the sender's DMARC policy when it says reject. When off, it goes to Junk.
             </Switch>
-            <Switch title="Send through Cloudflare" checked={s.send_via_cloudflare} onChange={(v) => put({ send_via_cloudflare: v })}>
-              Hand outgoing mail to Cloudflare Email Sending instead of delivering it from this machine. Use it when your ISP
-              blocks port 25 or receivers junk mail from home connections. Needs the Workers Paid plan and the token's Email
-              Sending permission. Turning it on sets up every domain.
-            </Switch>
             <Switch title="Save sent copies" checked={s.save_sent_copy} onChange={(v) => put({ save_sent_copy: v })}>
               File a copy of every sent message in Sent. Leave off for Outlook, which does this itself.
             </Switch>

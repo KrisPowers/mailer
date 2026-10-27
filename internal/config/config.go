@@ -32,9 +32,6 @@ type Config struct {
 
 	RejectDMARCFailures bool `json:"reject_dmarc_failures"`
 	SaveSentCopy        bool `json:"save_sent_copy"`
-	// SendViaCloudflare hands outbound mail to Cloudflare Email Sending
-	// instead of delivering it from this machine on port 25.
-	SendViaCloudflare bool `json:"send_via_cloudflare"`
 
 	Cloudflare Cloudflare `json:"cloudflare"`
 	Tailscale  Tailscale  `json:"tailscale"`
@@ -68,7 +65,7 @@ type Zone struct {
 	ID          string    `json:"id"`
 	AccountID   string    `json:"account_id"`
 	WorkerName  string    `json:"worker_name"`      // Email Worker the catch-all rule points at
-	SPFIP       string    `json:"spf_ip,omitempty"` // IP we last published in SPF
+	SPFIP       string    `json:"spf_ip,omitempty"` // home IP older versions put in SPF; removed on the next DNS sync
 	ConnectedAt time.Time `json:"connected_at"`
 }
 

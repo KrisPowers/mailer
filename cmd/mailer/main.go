@@ -35,7 +35,6 @@ import (
 	"mailer/internal/mta"
 	"mailer/internal/queue"
 	"mailer/internal/smtp"
-	"mailer/internal/smtpclient"
 	"mailer/internal/store"
 	"mailer/internal/tunnel"
 	"mailer/internal/users"
@@ -130,9 +129,7 @@ func serve(dataDir string, headless bool) error {
 
 	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger}
 	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger}
-	direct := &smtpclient.Client{Hostname: hostname, Resolver: resolver}
-	q, err := queue.New(filepath.Join(dataDir, "queue"),
-		&cloudflare.Relay{Setup: setup, Direct: direct}, m.Bounce, logger)
+	q, err := queue.New(filepath.Join(dataDir, "queue"), &cloudflare.Relay{Setup: setup}, m.Bounce, logger)
 	if err != nil {
 		return err
 	}
@@ -234,13 +231,13 @@ func serve(dataDir string, headless bool) error {
 	return nil
 }
 
-// syncDNS keeps every domain's SPF record and the HELO hostname pointed at our current
-// public IP, which can change on a home connection.
+// syncDNS keeps every domain's SPF record and mail app settings names in
+// place in Cloudflare.
 func syncDNS(ctx context.Context, setup *cloudflare.Setup, cfgm *config.Manager, logger *log.Logger) {
 	for {
 		if cfg := cfgm.Get(); cfg.Connected() {
 			c, cancel := context.WithTimeout(ctx, time.Minute)
-			if _, err := setup.SyncDNS(c); err != nil {
+			if err := setup.SyncDNS(c); err != nil {
 				logger.Printf("dns: %v", err)
 			}
 			cancel()

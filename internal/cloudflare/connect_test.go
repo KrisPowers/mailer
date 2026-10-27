@@ -127,6 +127,9 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		rec.ID = strings.TrimPrefix(rest, "dns_records/")
 		f.records[zone][rec.ID] = rec
 		ok(rec)
+	case strings.HasPrefix(rest, "dns_records/") && r.Method == "DELETE":
+		delete(f.records[zone], strings.TrimPrefix(rest, "dns_records/"))
+		ok(map[string]any{})
 	case strings.HasPrefix(p, "/accounts/a1/workers/scripts/"):
 		_, params, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		mr := multipart.NewReader(r.Body, params["boundary"])
@@ -213,7 +216,6 @@ func TestConnect(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	apiBase = srv.URL
-	publicIP = func(context.Context) (string, error) { return "203.0.113.50", nil }
 
 	cfgm, err := config.Open(t.TempDir())
 	if err != nil {
@@ -276,7 +278,9 @@ func TestConnect(t *testing.T) {
 		}
 	}
 	check("z1", "CNAME", "mail-in.example.com", "t1.cfargotunnel.com")
-	check("z1", "A", "mail.example.com", "203.0.113.50")
+	if len(fake.find("z1", "A", "mail.example.com")) != 0 {
+		t.Error("this machine's IP was published")
+	}
 	ingress, _ := json.Marshal(fake.tunnel)
 	for _, h := range []string{"mail-in.example.com", "autodiscover.example.com", "autoconfig.example.com",
 		"autodiscover.example.org", "autoconfig.example.org", "http_status:404"} {
@@ -289,13 +293,14 @@ func TestConnect(t *testing.T) {
 		check(z, "CNAME", "autoconfig."+d, "t1.cfargotunnel.com")
 		check(z, "TXT", "mail._domainkey."+d, "v=DKIM1; k=rsa; p=KEY-"+d)
 		check(z, "TXT", "_dmarc."+d, defaultDMARC)
-		check(z, "TXT", d, "v=spf1 include:_spf.mx.cloudflare.net ip4:203.0.113.50 ~all")
+		check(z, "TXT", d, "v=spf1 include:_spf.mx.cloudflare.net ~all")
+		check(z, "TXT", "cf-bounce._domainkey."+d, "v=DKIM1; k=rsa; p=CF")
+		if len(fake.sending[z]) != 1 {
+			t.Errorf("%s sending domains: %+v", d, fake.sending[z])
+		}
 	}
-	if len(fake.find("z2", "A", "mail.example.org"))+len(fake.find("z2", "CNAME", "mail-in.example.org")) != 0 {
-		t.Error("secondary domain got its own hostname or tunnel")
-	}
-	if a := fake.find("z1", "A", "mail.example.com"); len(a) == 1 && (a[0].Proxied == nil || *a[0].Proxied) {
-		t.Error("A record must not be proxied")
+	if len(fake.find("z2", "CNAME", "mail-in.example.org")) != 0 {
+		t.Error("secondary domain got its own tunnel")
 	}
 	if c := fake.find("z1", "CNAME", "mail-in.example.com"); len(c) == 1 && (c[0].Proxied == nil || !*c[0].Proxied) {
 		t.Error("tunnel CNAME must be proxied")
@@ -306,19 +311,31 @@ func TestConnect(t *testing.T) {
 		t.Fatalf("status: %+v", st)
 	}
 	for _, d := range st.Domains {
-		if !d.OK() || len(d.Checks) != 7 {
+		if !d.OK() || len(d.Checks) != 8 {
 			t.Errorf("%s not compliant: %+v", d.Name, d.Checks)
 		}
 	}
 
-	// IP change: SPF and A follow on every domain, old IP removed.
-	publicIP = func(context.Context) (string, error) { return "198.51.100.77", nil }
-	if _, err := s.SyncDNS(ctx); err != nil {
+	// The home IP an older version published is taken out of SPF and DNS.
+	for id, r := range fake.records["z1"] {
+		if r.Type == "TXT" && r.Name == "example.com" {
+			r.Content = "v=spf1 include:_spf.mx.cloudflare.net ip4:198.51.100.77 ~all"
+			fake.records["z1"][id] = r
+		}
+	}
+	fake.add("z1", Record{Type: "A", Name: "mail.example.com", Content: "198.51.100.77"})
+	cfgm.Update(func(c *config.Config) {
+		z := c.Cloudflare.Zones["example.com"]
+		z.SPFIP = "198.51.100.77"
+		c.Cloudflare.Zones["example.com"] = z
+	})
+	if err := s.SyncDNS(ctx); err != nil {
 		t.Fatal(err)
 	}
-	check("z1", "TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ip4:198.51.100.77 ~all")
-	check("z2", "TXT", "example.org", "v=spf1 include:_spf.mx.cloudflare.net ip4:198.51.100.77 ~all")
-	check("z1", "A", "mail.example.com", "198.51.100.77")
+	check("z1", "TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ~all")
+	if len(fake.find("z1", "A", "mail.example.com")) != 0 || cfgm.Get().Cloudflare.Zones["example.com"].SPFIP != "" {
+		t.Error("old home IP not removed")
+	}
 
 	// A drifted record shows up as a failed check.
 	for id, r := range fake.records["z2"] {

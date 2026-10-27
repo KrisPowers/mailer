@@ -6,7 +6,7 @@ this program stores, receives, and sends the mail. No router ports are opened.
 ```
 Internet mail ──▶ Cloudflare Email Routing ──▶ Worker ──▶ Cloudflare Tunnel ──▶ mailer
 Outlook / Gmail app ──▶ Tailscale Funnel (:443 IMAP, :8443 SMTP) ─────────────▶ mailer
-Your replies ◀── mailer sends directly, DKIM-signed
+Your replies ──▶ mailer ──▶ Cloudflare Email Sending ──▶ recipient (DKIM-signed)
 ```
 
 ## Setup
@@ -37,11 +37,11 @@ at boot.
 ## What the setup does for you
 
 - Cloudflare, per domain: deploys the email Worker, turns on Email Routing, points the
-  catch-all at the Worker, and publishes the DKIM, DMARC, and SPF records. One tunnel
+  catch-all at the Worker, onboards the domain for Email Sending, and publishes the
+  DKIM, DMARC, and SPF records. One tunnel
   serves every domain; the first domain connected (the primary) carries the server's
   hostname and the tunnel's address
 - Downloads `cloudflared` (official release, checksum-verified) and keeps it running
-- Keeps every domain's SPF updated when your home IP changes
 - Mail app settings: `autodiscover.<domain>` (Outlook) and `autoconfig.<domain>`
   (Thunderbird and others) are routed through the tunnel and answer with the server
   and ports, so a mail app needs only the address and password
@@ -50,19 +50,20 @@ at boot.
 
 ## Sending
 
-By default replies go straight from this machine to the recipient's mail server on
-port 25, DKIM-signed, with your home IP published in each domain's SPF. Many home
-ISPs block port 25, and some receivers junk mail from home connections. If the
-Overview shows port 25 blocked, turn on **Settings → Send through Cloudflare**: mail
-is handed to [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/)
-instead, which onboards every domain and publishes its records. It needs the Workers
-Paid plan. Messages over 5 MB
-still go direct.
+Outgoing mail is handed to [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/),
+part of Cloudflare Email Service. Nothing is sent from this machine and no port 25 is
+used or opened, and your home IP is never published in DNS. Email Sending needs the
+Workers Paid plan ($5/month) on the Cloudflare account. Setup onboards every domain
+and publishes the records it asks for.
+
+Cloudflare takes messages up to 5 MB; a larger message bounces back to the sender with
+the reason. Messages Cloudflare can't take yet (for example, before the plan is active)
+wait in the **Outbound queue** and are retried for four days.
 
 ## The app window
 
 The **Overview** page shows the connection checks (tunnel, Email Routing, inbound path,
-Funnel, IMAP reachability, outbound port 25) and your client settings. The other pages:
+Funnel, IMAP reachability, Email Sending) and your client settings. The other pages:
 
 | Page | What it's for |
 |---|---|
