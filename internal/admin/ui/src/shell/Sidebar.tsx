@@ -18,6 +18,7 @@ export function Sidebar({ view }: { view: View }) {
       {link("accounts", "users", "Accounts", ov?.accounts)}
       {link("aliases", "at", "Aliases")}
       {link("queue", "send", "Outbound queue", ov?.queue, true)}
+      {link("signins", "key", "Sign-ins")}
       {link("logs", "terminal", "Logs")}
       <div className="nav-spacer" />
       {link("settings", "sliders", "Settings")}

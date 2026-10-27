@@ -146,6 +146,22 @@ export interface TailscaleResult {
   action_url?: string;
 }
 
+export interface SignInEvent {
+  at: string;
+  proto: "imap" | "smtp";
+  ip: string;
+  client?: string;
+  user?: string;
+  result: string;
+  detail?: string;
+  commands?: string[];
+}
+
+export interface SignIns {
+  events: SignInEvent[];
+  blocked: { ip: string; until: string }[];
+}
+
 export interface Credentials {
   email: string;
   password: string;

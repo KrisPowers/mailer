@@ -13,10 +13,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"mailer/internal/audit"
 	"mailer/internal/proxyproto"
 	"mailer/internal/users"
 )
@@ -63,6 +65,7 @@ type Server struct {
 	MaxSize      int64
 	Backend      Backend
 	Log          *log.Logger
+	Audit        *audit.Log // sign-ins on the submission port
 }
 
 const (
@@ -102,6 +105,11 @@ type session struct {
 	tls      bool
 	authUser string
 	env      *Envelope
+
+	// For the sign-in audit: the commands sent before signing in, and
+	// whether an attempt was recorded.
+	cmds    []string
+	audited bool
 }
 
 func (srv *Server) handle(c net.Conn, terminated bool) {
@@ -109,7 +117,16 @@ func (srv *Server) handle(c net.Conn, terminated bool) {
 	if ta, ok := c.RemoteAddr().(*net.TCPAddr); ok {
 		s.ip = ta.IP
 	}
-	defer func() { s.conn.Close() }()
+	defer func() {
+		s.conn.Close()
+		if !s.audited && len(s.cmds) > 0 {
+			detail := "disconnected without signing in"
+			if slices.Contains(s.cmds, "MAIL") {
+				detail = "tried to send without signing in; turn on the app's \"outgoing server requires authentication\""
+			}
+			s.audit("", audit.NoSignIn, detail)
+		}
+	}()
 	if terminated {
 		pc, ip, err := proxyproto.Read(c, 2*time.Second)
 		if err != nil {
@@ -196,7 +213,40 @@ func (s *session) canAuth() bool {
 	return s.srv.Mode == ModeSubmission && (s.tls || s.srv.InsecureAuth)
 }
 
+// audit records a sign-in attempt on the submission port, or a connection
+// that left without one.
+func (s *session) audit(user, res, detail string) {
+	s.audited = true
+	if s.srv.Mode != ModeSubmission {
+		return
+	}
+	s.srv.Audit.Add(audit.Event{Proto: "smtp", IP: s.ip.String(), Client: printable(s.helo, 100),
+		User: printable(user, 200), Result: res, Detail: detail, Commands: s.cmds})
+}
+
+// printable keeps a client-supplied string printable and short.
+func printable(v string, n int) string {
+	v = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, v)
+	if len(v) > n {
+		v = v[:n]
+	}
+	return v
+}
+
 func (s *session) command(verb, arg string) (quit bool) {
+	if s.authUser == "" && len(s.cmds) < 20 {
+		c := printable(verb, 20)
+		if verb == "AUTH" {
+			mech, _, _ := strings.Cut(arg, " ")
+			c += " " + printable(strings.ToUpper(mech), 40)
+		}
+		s.cmds = append(s.cmds, c)
+	}
 	switch verb {
 	case "EHLO", "HELO":
 		if arg == "" {
@@ -270,6 +320,9 @@ func (s *session) command(verb, arg string) (quit bool) {
 
 func (s *session) auth(arg string) {
 	if !s.canAuth() {
+		if s.srv.Mode == ModeSubmission {
+			s.audit("", audit.NeedsTLS, "tried to sign in without TLS")
+		}
 		s.reply(503, "5.5.1", "AUTH not available")
 		return
 	}
@@ -283,6 +336,7 @@ func (s *session) auth(arg string) {
 	}
 	ipStr := s.ip.String()
 	if s.srv.Limiter.Blocked(ipStr) {
+		s.audit("", audit.Blocked, "too many failed sign-ins from this address in the last 15 minutes")
 		s.reply(454, "4.7.0", "too many failed attempts; try later")
 		return
 	}
@@ -311,6 +365,7 @@ func (s *session) auth(arg string) {
 		if resp == "" {
 			var ok bool
 			if resp, ok = readResp(""); !ok {
+				s.audit("", audit.Malformed, "the app cancelled AUTH PLAIN")
 				s.reply(501, "5.0.0", "authentication cancelled")
 				return
 			}
@@ -318,6 +373,7 @@ func (s *session) auth(arg string) {
 		dec, ok := decode(resp)
 		parts := strings.Split(dec, "\x00")
 		if !ok || len(parts) != 3 || (parts[0] != "" && !strings.EqualFold(parts[0], parts[1])) {
+			s.audit("", audit.Malformed, "AUTH PLAIN credentials aren't in the expected form")
 			s.reply(501, "5.5.2", "malformed credentials")
 			return
 		}
@@ -327,12 +383,14 @@ func (s *session) auth(arg string) {
 		var ok bool
 		if u == "" {
 			if u, ok = readResp("VXNlcm5hbWU6"); !ok { // "Username:"
+				s.audit("", audit.Malformed, "the app cancelled AUTH LOGIN")
 				s.reply(501, "5.0.0", "authentication cancelled")
 				return
 			}
 		}
 		p, ok := readResp("UGFzc3dvcmQ6") // "Password:"
 		if !ok {
+			s.audit("", audit.Malformed, "the app cancelled AUTH LOGIN")
 			s.reply(501, "5.0.0", "authentication cancelled")
 			return
 		}
@@ -340,21 +398,31 @@ func (s *session) auth(arg string) {
 		user, ok1 = decode(u)
 		pass, ok2 = decode(p)
 		if !ok1 || !ok2 {
+			s.audit("", audit.Malformed, "AUTH LOGIN credentials aren't base64")
 			s.reply(501, "5.5.2", "malformed credentials")
 			return
 		}
 	default:
+		s.audit("", audit.Unsupported, "asked for AUTH "+printable(mech, 40)+"; only PLAIN and LOGIN are offered")
 		s.reply(504, "5.5.4", "unsupported mechanism")
 		return
 	}
 	email, ok := s.srv.Users.Authenticate(user, pass)
 	if !ok {
-		s.srv.Limiter.Fail(ipStr)
-		s.srv.Log.Printf("smtp: failed auth for %q from %s", user, ipStr)
+		res, detail := audit.BadPassword, "wrong password"
+		if !s.srv.Users.Exists(user) {
+			res, detail = audit.UnknownUser, "no account with this username; use the full email address"
+		}
+		if s.srv.Limiter.Fail(ipStr) {
+			detail += "; this address is now blocked for 15 minutes"
+		}
+		s.audit(user, res, detail)
+		s.srv.Log.Printf("smtp: failed auth for %q from %s (%s)", user, ipStr, detail)
 		s.reply(535, "5.7.8", "authentication failed")
 		return
 	}
 	s.authUser = email
+	s.audit(email, audit.OK, "")
 	s.reply(235, "2.7.0", "authenticated")
 }
 

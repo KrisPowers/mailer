@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"mailer/internal/audit"
 	"mailer/internal/cloudflare"
 	"mailer/internal/config"
 	"mailer/internal/logbuf"
@@ -45,6 +46,9 @@ type Server struct {
 	Tunnel *tunnel.Runner
 	Logs   *logbuf.Buffer
 	Log    *log.Logger
+	// Sign-in attempts by mail apps, and the rate limit they count against.
+	Audit   *audit.Log
+	Limiter *users.Limiter
 
 	mu     sync.Mutex
 	checks *Checks
@@ -74,6 +78,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/queue", s.getQueue)
 	mux.HandleFunc("POST /api/queue/retry", s.retryQueue)
 	mux.HandleFunc("GET /api/logs", s.getLogs)
+	mux.HandleFunc("GET /api/signins", s.getSignIns)
+	mux.HandleFunc("POST /api/signins/unblock", s.unblock)
+	mux.HandleFunc("POST /api/signins/test", s.testSignIn)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
 	return s.guard(mux)

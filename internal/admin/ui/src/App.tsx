@@ -15,6 +15,7 @@ import { Domains } from "./views/Domains";
 import { Logs } from "./views/Logs";
 import { Queue } from "./views/Queue";
 import { Settings } from "./views/Settings";
+import { SignIns } from "./views/SignIns";
 
 const PAGES: Record<View, () => React.JSX.Element> = {
   dashboard: Dashboard,
@@ -22,6 +23,7 @@ const PAGES: Record<View, () => React.JSX.Element> = {
   accounts: Accounts,
   aliases: Aliases,
   queue: Queue,
+  signins: SignIns,
   logs: Logs,
   settings: Settings,
 };
