@@ -152,10 +152,15 @@ func serve(dataDir string, headless bool) error {
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)
 	tunnelDone := make(chan struct{})
-	start := func() error {
-		adminL, err := listen("admin UI", loop(cfg.Ports.Admin))
-		if err != nil {
-			return err
+	// start opens the listeners and background work. The window serves the
+	// admin UI in-process, so only headless runs listen for it.
+	start := func(adminPort bool) error {
+		if adminPort {
+			adminL, err := listen("admin UI", loop(cfg.Ports.Admin))
+			if err != nil {
+				return err
+			}
+			go (&http.Server{Handler: adm.Handler(), ReadHeaderTimeout: 10 * time.Second}).Serve(adminL)
 		}
 		inboundL, err := listen("inbound", loop(cfg.Ports.Inbound))
 		if err != nil {
@@ -170,7 +175,6 @@ func serve(dataDir string, headless bool) error {
 			return err
 		}
 
-		go (&http.Server{Handler: adm.Handler(), ReadHeaderTimeout: 10 * time.Second}).Serve(adminL)
 		go (&http.Server{Handler: m.InboundHandler(), ReadHeaderTimeout: 10 * time.Second,
 			ReadTimeout: 5 * time.Minute}).Serve(inboundL)
 		go im.Serve(imapL, true)
@@ -182,13 +186,13 @@ func serve(dataDir string, headless bool) error {
 		}()
 		go adm.RunChecks(ctx)
 		go syncDNS(ctx, setup, cfgm, logger)
-		logger.Printf("mailer running. Admin page: %s", url)
+		logger.Printf("mailer running")
 		return nil
 	}
 
 	started := false
 	if !headless {
-		if started, err = runWindow(adm.Handler(), start); err != nil {
+		if started, err = runWindow(adm.Handler(), func() error { return start(false) }); err != nil {
 			return err
 		}
 		if !started {
@@ -196,9 +200,10 @@ func serve(dataDir string, headless bool) error {
 		}
 	}
 	if !started {
-		if err := start(); err != nil {
+		if err := start(true); err != nil {
 			return err
 		}
+		logger.Printf("admin page: %s", url)
 		if !cfg.Connected() {
 			openBrowser(url)
 		}
