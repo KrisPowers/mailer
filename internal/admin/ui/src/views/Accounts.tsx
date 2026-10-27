@@ -4,6 +4,7 @@ import { AsyncButton } from "../components/AsyncButton";
 import { Badge } from "../components/Badge";
 import { Confirm } from "../components/Confirm";
 import { DomainField } from "../components/DomainField";
+import { PasswordField } from "../components/PasswordField";
 import { MoreMenu, type MenuItem } from "../components/Floating";
 import { Icon } from "../components/Icon";
 import { EmptyRow, PageHead, Panel, Search } from "../components/Layout";
@@ -37,15 +38,7 @@ export function Accounts() {
     { label: "Client settings", icon: "phone", onClick: () => open(<Modal title="Client settings" footer={<CloseButton />}><ClientSettings /></Modal>) },
     { label: "Copy address", icon: "copy", onClick: () => copy(a.email, "Address copied") },
     "-",
-    {
-      label: "New password", icon: "key", onClick: () => open(
-        <Confirm title="New password" label="Generate"
-          message={`Generate a new password for ${a.email}? The current one stops working immediately.`}
-          onYes={async () => {
-            const r = await api.resetPassword(a.email);
-            open(<PasswordModal title="New password" email={r.email} password={r.password} />);
-          }} />),
-    },
+    { label: "Set password", icon: "key", onClick: () => open(<SetPassword email={a.email} />) },
     {
       label: "Delete account", icon: "trash", danger: true, onClick: () => open(
         <Confirm title="Delete account" label="Delete" danger
@@ -128,10 +121,11 @@ function NewAccount({ domains, onCreated }: { domains: string[]; onCreated: () =
   const { open } = useModal();
   const [name, setName] = useState("");
   const [domain, setDomain] = useState(domains[0] ?? "");
+  const [password, setPassword] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   const create = async () => {
-    const r = await api.createAccount(name.includes("@") ? name : name + "@" + domain);
+    const r = await api.createAccount(name.includes("@") ? name : name + "@" + domain, password);
     await onCreated();
     open(<PasswordModal title="Account created" email={r.email} password={r.password} />);
   };
@@ -143,9 +137,26 @@ function NewAccount({ domains, onCreated }: { domains: string[]; onCreated: () =
           <input id="new-acct" ref={input} type="text" placeholder="name" spellCheck={false} value={name} onChange={(e) => setName(e.target.value)} />
           <span>@{domain || "…"}</span>
         </div>
-        <div className="hint">A strong password is generated and shown once.</div>
       </div>
       <DomainField domains={domains} value={domain} onChange={setDomain} />
+      <PasswordField value={password} onChange={setPassword} />
+    </Modal>
+  );
+}
+
+// SetPassword replaces an account's password; the old one stops working.
+function SetPassword({ email }: { email: string }) {
+  const { open } = useModal();
+  const [password, setPassword] = useState("");
+  const save = async () => {
+    const r = await api.setPassword(email, password);
+    open(<PasswordModal title="Password set" email={r.email} password={r.password} />);
+  };
+  return (
+    <Modal title={"Set password for " + email}
+      footer={<><CloseButton label="Cancel" /><AsyncButton className="btn primary" onClick={save}>Set password</AsyncButton></>}>
+      <PasswordField value={password} onChange={setPassword} />
+      <p className="muted small">The current password stops working right away.</p>
     </Modal>
   );
 }
