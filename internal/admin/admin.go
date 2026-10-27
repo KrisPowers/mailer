@@ -58,6 +58,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/overview", s.overview)
 	mux.HandleFunc("POST /api/check", s.runChecksNow)
 	mux.HandleFunc("POST /api/cloudflare/connect", s.cloudflareConnect)
+	mux.HandleFunc("GET /api/cloudflare/zones", s.cloudflareZones)
+	mux.HandleFunc("GET /api/domains", s.listDomains)
+	mux.HandleFunc("POST /api/domains/remove", s.removeDomain)
 	mux.HandleFunc("POST /api/tailscale/enable", s.tailscaleEnable)
 	mux.HandleFunc("GET /api/accounts", s.listAccounts)
 	mux.HandleFunc("POST /api/accounts", s.createAccount)
@@ -175,15 +178,9 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 			tunnelDetail = fmt.Sprintf("%s · %d connection(s)", cf.TunnelStatus, cf.TunnelConns)
 		}
 		add("Cloudflare tunnel", cf.TunnelStatus == "healthy", tunnelDetail)
-		routingDetail := "ready · all mail goes to the Worker"
-		if cf.EmailRouting != "ready" || !cf.CatchAllOK {
-			catchAll := "catch-all not pointing at the Worker"
-			if cf.CatchAllOK {
-				catchAll = "catch-all OK"
-			}
-			routingDetail = fmt.Sprintf("status %s · %s", orDash(cf.EmailRouting), catchAll)
+		for _, d := range cf.Domains {
+			add("Domain "+d.Name, d.OK(), domainDetail(d))
 		}
-		add("Email Routing", cf.EmailRouting == "ready" && cf.CatchAllOK, routingDetail)
 		inboundDetail := "reachable from the internet"
 		if !cf.PublicHealthy {
 			inboundDetail = cfg.Cloudflare.InboundHost + " not reachable"
@@ -215,6 +212,19 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 	s.checks = c
 	s.mu.Unlock()
 	return c
+}
+
+// domainDetail names the first failing check, if any.
+func domainDetail(d cloudflare.DomainStatus) string {
+	if d.Error != "" {
+		return d.Error
+	}
+	for _, c := range d.Checks {
+		if !c.OK {
+			return c.Name + ": " + c.Detail
+		}
+	}
+	return "receiving · MX, SPF, DKIM and DMARC in place"
 }
 
 func orDash(s string) string {
@@ -303,8 +313,9 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, map[string]any{
 		"domain":           cfg.Domain(),
+		"domains":          cfg.Domains,
 		"hostname":         cfg.Hostname,
-		"cloudflare_setup": cfg.Cloudflare.ZoneID != "",
+		"cloudflare_setup": cfg.Connected(),
 		"tailscale_setup":  !cfg.Tailscale.EnabledAt.IsZero(),
 		"accounts":         len(s.Users.List()),
 		"queue":            len(q),
@@ -347,6 +358,80 @@ func (s *Server) cloudflareConnect(w http.ResponseWriter, r *http.Request) {
 	}
 	go s.refresh(context.Background())
 	writeJSON(w, resp)
+}
+
+type zoneInfo struct {
+	Name      string `json:"name"`
+	Connected bool   `json:"connected"`
+}
+
+// cloudflareZones lists the domains the saved token can see, for adding one.
+func (s *Server) cloudflareZones(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Cfg.Get()
+	if cfg.Cloudflare.Token == "" {
+		writeErr(w, 400, errors.New("connect Cloudflare first"))
+		return
+	}
+	zones, err := cloudflare.New(cfg.Cloudflare.Token).Zones(r.Context())
+	if err != nil {
+		writeErr(w, 502, err)
+		return
+	}
+	out := []zoneInfo{}
+	for _, z := range zones {
+		out = append(out, zoneInfo{z.Name, cfg.IsLocalDomain(z.Name)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	writeJSON(w, out)
+}
+
+type domainInfo struct {
+	Name        string                   `json:"name"`
+	Primary     bool                     `json:"primary"`
+	AccountID   string                   `json:"account_id"`
+	ConnectedAt time.Time                `json:"connected_at"`
+	Accounts    int                      `json:"accounts"`
+	Status      *cloudflare.DomainStatus `json:"status"`
+}
+
+func (s *Server) listDomains(w http.ResponseWriter, r *http.Request) {
+	cfg := s.Cfg.Get()
+	checks := s.currentChecks()
+	accts := s.Users.List()
+	out := []domainInfo{}
+	for i, d := range cfg.Domains {
+		z := cfg.Cloudflare.Zones[d]
+		di := domainInfo{Name: d, Primary: i == 0, AccountID: z.AccountID, ConnectedAt: z.ConnectedAt}
+		for _, u := range accts {
+			if strings.HasSuffix(u, "@"+d) {
+				di.Accounts++
+			}
+		}
+		if checks != nil {
+			for _, ds := range checks.Cloudflare.Domains {
+				if ds.Name == d {
+					di.Status = &ds
+				}
+			}
+		}
+		out = append(out, di)
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) removeDomain(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Domain string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	warning, err := s.Setup.Disconnect(r.Context(), req.Domain)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	go s.refresh(context.Background())
+	writeJSON(w, map[string]any{"ok": true, "warning": warning})
 }
 
 func (s *Server) tailscaleEnable(w http.ResponseWriter, r *http.Request) {
