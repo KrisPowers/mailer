@@ -117,15 +117,15 @@ func serve(dataDir string, headless bool) error {
 	hostname := func() string { return cfgm.Get().Hostname }
 
 	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger}
+	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger}
 	direct := &smtpclient.Client{Hostname: hostname, Resolver: resolver}
 	q, err := queue.New(filepath.Join(dataDir, "queue"),
-		&cloudflare.Relay{Cfg: cfgm, Direct: direct}, m.Bounce, logger)
+		&cloudflare.Relay{Setup: setup, Direct: direct}, m.Bounce, logger)
 	if err != nil {
 		return err
 	}
 	m.Queue = q
 
-	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger}
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}
 	adm := &admin.Server{Cfg: cfgm, Users: db, Store: st, Queue: q, MTA: m, Setup: setup,
 		Tunnel: runner, Logs: logs, Log: logger, OpenURL: openBrowser}

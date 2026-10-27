@@ -24,7 +24,8 @@ func TestSending(t *testing.T) {
 	s := &Setup{Cfg: cfgm, Log: log.New(io.Discard, "", 0),
 		DKIMRecord: func(d string) (string, error) { return "v=DKIM1; k=rsa; p=KEY", nil }}
 	ctx := context.Background()
-	if _, err := s.Connect(ctx, "good-token", "example.com"); err != nil {
+	s.UseToken("good-token")
+	if _, err := s.Connect(ctx, "example.com"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -60,7 +61,7 @@ func TestSending(t *testing.T) {
 		t.Errorf("status with sending on: %+v", d.Checks)
 	}
 
-	relay := &Relay{Cfg: cfgm}
+	relay := &Relay{Setup: s}
 	msg := []byte("From: me@example.com\r\nTo: ok@other.net\r\nSubject: hi\r\n\r\nhello\r\n")
 	res := relay.Deliver(ctx, "other.net", "me@example.com", []string{"ok@other.net", "bad@other.net"}, msg)
 	if len(fake.sent) != 1 || fake.sent[0]["mime_message"] != string(msg) || fake.sent[0]["from"] != "me@example.com" {

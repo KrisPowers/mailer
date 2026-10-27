@@ -59,6 +59,7 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /api/overview", s.overview)
 	mux.HandleFunc("POST /api/check", s.runChecksNow)
+	mux.HandleFunc("POST /api/cloudflare/signin", s.cloudflareSignIn)
 	mux.HandleFunc("POST /api/cloudflare/connect", s.cloudflareConnect)
 	mux.HandleFunc("GET /api/cloudflare/zones", s.cloudflareZones)
 	mux.HandleFunc("GET /api/domains", s.listDomains)
@@ -342,22 +343,41 @@ func (s *Server) runChecksNow(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.refresh(r.Context()))
 }
 
+// cloudflareSignIn is the one-click connect: Cloudflare's sign-in page
+// opens in the browser, and once it's approved the setup runs.
+func (s *Server) cloudflareSignIn(w http.ResponseWriter, r *http.Request) {
+	if s.OpenURL == nil {
+		writeErr(w, 500, errors.New("no browser to sign in with"))
+		return
+	}
+	if err := s.Setup.SignIn(r.Context(), s.OpenURL); err != nil {
+		writeJSON(w, map[string]any{"error": err.Error()})
+		return
+	}
+	s.connect(w, r, "")
+}
+
+// cloudflareConnect sets up zone (or repairs it) with the saved sign-in,
+// or with an API token when one is given.
 func (s *Server) cloudflareConnect(w http.ResponseWriter, r *http.Request) {
 	var req struct{ Token, Zone string }
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, 400, err)
 		return
 	}
-	if req.Token == "" {
-		req.Token = s.Cfg.Get().Cloudflare.Token // "repair" with the saved token
+	if req.Token != "" {
+		if err := s.Setup.UseToken(req.Token); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
 	}
-	if req.Token == "" {
-		writeErr(w, 400, errors.New("paste your Cloudflare API token"))
-		return
-	}
+	s.connect(w, r, req.Zone)
+}
+
+func (s *Server) connect(w http.ResponseWriter, r *http.Request, zone string) {
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
 	defer cancel()
-	steps, err := s.Setup.Connect(ctx, req.Token, req.Zone)
+	steps, err := s.Setup.Connect(ctx, zone)
 	var zc *cloudflare.ZoneChoiceError
 	if errors.As(err, &zc) {
 		writeJSON(w, map[string]any{"choose_zone": zc.Zones})
@@ -376,14 +396,10 @@ type zoneInfo struct {
 	Connected bool   `json:"connected"`
 }
 
-// cloudflareZones lists the domains the saved token can see, for adding one.
+// cloudflareZones lists the domains the Cloudflare account has, for adding one.
 func (s *Server) cloudflareZones(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Cfg.Get()
-	if cfg.Cloudflare.Token == "" {
-		writeErr(w, 400, errors.New("connect Cloudflare first"))
-		return
-	}
-	zones, err := cloudflare.New(cfg.Cloudflare.Token).Zones(r.Context())
+	zones, err := s.Setup.Zones(r.Context())
 	if err != nil {
 		writeErr(w, 502, err)
 		return

@@ -22,18 +22,6 @@ type Zone struct {
 	} `json:"account"`
 }
 
-// Verify checks that the token is valid and active.
-func (c *Client) Verify(ctx context.Context) error {
-	var r struct{ Status string }
-	if err := c.do(ctx, "GET", "/user/tokens/verify", nil, &r); err != nil {
-		return err
-	}
-	if r.Status != "active" {
-		return fmt.Errorf("token status is %q", r.Status)
-	}
-	return nil
-}
-
 // Zones lists the zones the token can see.
 func (c *Client) Zones(ctx context.Context) ([]Zone, error) {
 	const perPage = 50

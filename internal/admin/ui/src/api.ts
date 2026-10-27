@@ -20,6 +20,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 export const api = {
   overview: () => call<Overview>("GET", "/api/overview"),
   check: () => call<Checks>("POST", "/api/check"),
+  signInCloudflare: () => call<ConnectResult>("POST", "/api/cloudflare/signin"),
   connectCloudflare: (token: string, zone: string) =>
     call<ConnectResult>("POST", "/api/cloudflare/connect", { token, zone }),
   zones: () => call<Zone[]>("GET", "/api/cloudflare/zones"),
