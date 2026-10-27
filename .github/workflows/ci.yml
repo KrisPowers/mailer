@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+
+  # The admin UI build is committed (internal/admin/web) so building the
+  # server never needs Node. This rebuilds it, publishes the result as the
+  # "web" artifact and fails if the committed copy is out of date.
+  ui:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: internal/admin/ui
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: internal/admin/ui/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: internal/admin/web
+      - name: Committed build is current
+        run: |
+          changes=$(git status --porcelain -- ../web)
+          if [ -n "$changes" ]; then
+            echo "$changes"
+            echo "::error::internal/admin/web is stale; commit the 'web' artifact from this run"
+            exit 1
+          fi
