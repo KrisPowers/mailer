@@ -3,8 +3,9 @@
 # Needs Go and Node.js. Opening Mailer.exe starts the mail server and shows
 # its window; Mailer > Quit Mailer stops it.
 
-$ErrorActionPreference = "Stop"
-Set-Location (Split-Path $PSScriptRoot -Parent)
+# Failures are caught by exit code: go and npm print progress on stderr,
+# which PowerShell 5.1 turns into errors when output is redirected.
+Set-Location (Split-Path $PSScriptRoot -Parent) -ErrorAction Stop
 
 function Check($what) {
     if ($LASTEXITCODE -ne 0) { throw "$what failed (exit code $LASTEXITCODE)" }
@@ -24,7 +25,7 @@ go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64 --manifest gui --i
     --product-name Mailer --file-description Mailer --original-filename Mailer.exe --out cmd\mailer\rsrc
 Check "icon and manifest"
 
-New-Item -ItemType Directory -Force builds | Out-Null
+New-Item -ItemType Directory -Force builds -ErrorAction Stop | Out-Null
 go build -tags desktop,production -trimpath -ldflags "-w -s -H windowsgui" -o builds\Mailer.exe ./cmd/mailer
 Check "go build"
 
