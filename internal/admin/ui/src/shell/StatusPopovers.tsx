@@ -1,48 +1,59 @@
-import type { ReactNode } from "react";
 import { Badge, healthText } from "../components/Badge";
 import { useFloating } from "../components/Floating";
-import { Icon } from "../components/Icon";
+import { Icon, type IconName } from "../components/Icon";
 import { useModal } from "../components/Modal";
-import { fmtTime, timeAgo } from "../format";
-import { domainOK, port25, statusOf, useOverview } from "../overview";
+import { timeAgo } from "../format";
+import { statusOf, useOverview, type Area } from "../overview";
 import { ClientSettings } from "../setup/ClientSettings";
 import { RepairCloudflare } from "../setup/RepairCloudflare";
 import { useEnableTailscale } from "../setup/tailscale";
 import { Wizard } from "../setup/Wizard";
+import type { ReactNode } from "react";
 
-function Line({ label, children }: { label: string; children: ReactNode }) {
-  return <div className="row-line"><span>{label}</span><span>{children}</span></div>;
+// AreaPopover lists every check behind one status icon: what was checked,
+// what came back, and for a failure, what to do about it.
+function AreaPopover({ area, icon, title, foot, children }: {
+  area: Area;
+  icon: IconName;
+  title: string;
+  foot: ReactNode;
+  children?: ReactNode;
+}) {
+  const { ov } = useOverview();
+  const k = statusOf(ov)[area === "cloudflare" ? "cf" : area === "tailscale" ? "ts" : "out"];
+  const items = (ov?.checks?.items ?? []).filter((i) => i.area === area);
+  return (
+    <>
+      <div className="pop-head"><Icon name={icon} />{title}<Badge kind={k}>{healthText[k]}</Badge></div>
+      <div className="pop-body">
+        {items.length ? (
+          <ul className="checks">
+            {items.map((i) => (
+              <li key={i.name} className={i.ok ? "ok" : "bad"}>
+                <Icon name={i.ok ? "check" : "alert"} />
+                <b>{i.name}</b>
+                <span className="d">{i.detail}</span>
+                {i.fix && <span className="fix">{i.fix}</span>}
+              </li>
+            ))}
+          </ul>
+        ) : <p className="muted">Checking…</p>}
+        {children}
+      </div>
+      <div className="pop-foot">{foot}</div>
+    </>
+  );
 }
 
 export function CloudflarePopover() {
   const { ov } = useOverview();
   const { close } = useFloating();
   const { open } = useModal();
-  const cf = ov?.checks?.cloudflare;
-  const tun = ov?.checks?.tunnel;
-  const k = statusOf(ov).cf;
   return (
-    <>
-      <div className="pop-head"><Icon name="cloud" />Cloudflare<Badge kind={k}>{cf?.connected ? healthText[k] : "Not connected"}</Badge></div>
-      <div className="pop-body">
-        {cf?.connected ? <>
-          <Line label="Primary domain">{cf.domain}</Line>
-          <Line label="Tunnel">{cf.tunnel_status || "—"} · {cf.tunnel_connections || 0} conn</Line>
-          <Line label="Connector (cloudflared)">{tun?.running ? "running" : tun?.last_error || "not running"}</Line>
-          <Line label="Domains healthy">{cf.domains.filter(domainOK).length} of {cf.domains.length}</Line>
-          <Line label="Inbound path">{cf.public_healthy ? "reachable" : "unreachable"}</Line>
-          <Line label="Connected">{fmtTime(ov?.connected_at)}</Line>
-        </> : <p className="muted">Cloudflare receives your mail and passes it to this server through a tunnel.</p>}
-      </div>
-      <div className="pop-foot">
-        {cf?.connected
-          ? <>
-            <a className="btn sm" href="#domains" onClick={close}>Domains</a>
-            <button className="btn sm" onClick={() => { close(); open(<RepairCloudflare domains={ov?.domains ?? []} />); }}><Icon name="refresh" />Repair</button>
-          </>
-          : <button className="btn sm primary" onClick={() => { close(); open(<Wizard />); }}>Set up</button>}
-      </div>
-    </>
+    <AreaPopover area="cloudflare" icon="cloud" title="Cloudflare: receiving mail" foot={ov?.cloudflare_setup ? <>
+      <a className="btn sm" href="#domains" onClick={close}>Domains</a>
+      <button className="btn sm primary" onClick={() => { close(); open(<RepairCloudflare domains={ov?.domains ?? []} />); }}><Icon name="refresh" />Repair</button>
+    </> : <button className="btn sm primary" onClick={() => { close(); open(<Wizard step={1} />); }}>Connect Cloudflare</button>} />
   );
 }
 
@@ -51,43 +62,25 @@ export function TailscalePopover() {
   const { close } = useFloating();
   const enable = useEnableTailscale();
   const ts = ov?.checks?.tailscale;
-  const k = statusOf(ov).ts;
   return (
-    <>
-      <div className="pop-head"><Icon name="globe" />Tailscale<Badge kind={k}>{healthText[k]}</Badge></div>
-      <div className="pop-body">
-        <Line label="Installed">{ts?.installed ? "yes" : "no"}</Line>
-        <Line label="Signed in">{ts?.running ? "yes" : ts?.state || "no"}</Line>
-        {ts?.dns_name && <Line label="Address">{ts.dns_name}</Line>}
-        <Line label="Funnel · IMAP :443">{ts?.funnel_imap ? "on" : "off"}</Line>
-        <Line label="Funnel · SMTP :8443">{ts?.funnel_submission ? "on" : "off"}</Line>
-      </div>
-      <div className="pop-foot">
-        {!ts?.installed
-          ? <a className="btn sm" href="https://tailscale.com/download" target="_blank" rel="noopener"><Icon name="external" />Download</a>
-          : <button className="btn sm" onClick={() => { close(); enable(); }}><Icon name="refresh" />{ts.funnel_imap ? "Re-apply" : "Enable"}</button>}
-      </div>
-    </>
+    <AreaPopover area="tailscale" icon="globe" title="Tailscale: mail apps" foot={!ts?.installed
+      ? <a className="btn sm primary" href="https://tailscale.com/download" target="_blank" rel="noopener"><Icon name="external" />Download Tailscale</a>
+      : <button className="btn sm primary" onClick={() => { close(); enable(); }}><Icon name="refresh" />Enable Funnel</button>} />
   );
 }
 
 export function MailFlowPopover() {
   const { ov } = useOverview();
   const { close } = useFloating();
-  const p25 = port25(ov);
-  const k = statusOf(ov).out;
   return (
-    <>
-      <div className="pop-head"><Icon name="send" />Mail flow<Badge kind={k}>{healthText[k]}</Badge></div>
-      <div className="pop-body">
-        {ov?.send_via_cloudflare
-          ? <Line label="Sending">through Cloudflare</Line>
-          : <Line label="Outbound port 25">{p25 ? (p25.ok ? "open" : "blocked") : "—"}</Line>}
-        <Line label="Waiting to send">{ov?.queue ?? 0}</Line>
-        <Line label="Last received">{timeAgo(ov?.last_inbound)}</Line>
-      </div>
-      <div className="pop-foot"><a className="btn sm" href="#queue" onClick={close}>View queue</a></div>
-    </>
+    <AreaPopover area="sending" icon="send" title="Sending mail" foot={<>
+      <a className="btn sm" href="#settings" onClick={close}>Settings</a>
+      <a className="btn sm" href="#queue" onClick={close}>View queue</a>
+    </>}>
+      <p className="muted small">
+        {ov?.queue ? `${ov.queue} message(s) waiting to send.` : "Nothing waiting to send."} Last received {timeAgo(ov?.last_inbound)}.
+      </p>
+    </AreaPopover>
   );
 }
 

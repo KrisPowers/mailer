@@ -6,7 +6,7 @@ export function ClientSettings() {
   const { ov } = useOverview();
   const c = ov?.client;
   if (!c) return <p className="muted">Available once Tailscale is enabled.</p>;
-  return (
+  return (<>
     <dl className="kv">
       <dt>Account type</dt><dd>IMAP</dd><span />
       <dt>Incoming server</dt><dd className="mono">{c.server}</dd><CopyButton text={c.server} label="Server copied" />
@@ -14,6 +14,11 @@ export function ClientSettings() {
       <dt>Outgoing server</dt><dd className="mono">{c.server}</dd><CopyButton text={c.server} label="Server copied" />
       <dt>Outgoing port</dt><dd>{c.smtp_port} · SSL/TLS</dd><span />
       <dt>Username</dt><dd>full email address</dd><span />
+      <dt>Password</dt><dd>the one set on the Accounts page</dd><span />
     </dl>
-  );
+    <p className="muted small">
+      In Outlook, add the account in the Outlook app (not outlook.com, which can't add other mail servers).
+      If it opens a Microsoft sign-in page, go back and choose <b>IMAP</b> as the account type, then enter these settings.
+    </p>
+  </>);
 }
