@@ -28,7 +28,7 @@ type Step struct {
 	Detail string `json:"detail,omitempty"`
 }
 
-// ZoneChoiceError means the token can see several zones and the user must
+// ZoneChoiceError means the account can see several zones and the user must
 // pick one.
 type ZoneChoiceError struct{ Zones []string }
 
@@ -42,6 +42,8 @@ type Setup struct {
 	// if needed.
 	DKIMRecord func(domain string) (string, error)
 	Log        *log.Logger
+
+	mu sync.Mutex // one credential renewal at a time
 }
 
 const spfInclude = "include:_spf.mx.cloudflare.net"
@@ -50,12 +52,13 @@ const spfInclude = "include:_spf.mx.cloudflare.net"
 // domains in an account share it.
 const workerName = "email-inbound"
 
-// Connect connects zoneName (or the token's only zone) to this server:
-// tunnel, Email Worker, Email Routing, DKIM, DMARC and SPF. The first
+// Connect connects zoneName (or the account's only zone) to this server
+// with the saved sign-in or API token: tunnel, Email Worker, Email
+// Routing, DKIM, DMARC and SPF. The first
 // domain connected is the primary: it carries the server's hostname and
 // the tunnel's inbound address. Connect is idempotent: running it again
 // repairs whatever is missing.
-func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, error) {
+func (s *Setup) Connect(ctx context.Context, zoneName string) ([]Step, error) {
 	var steps []Step
 	fail := func(name string, err error) ([]Step, error) {
 		steps = append(steps, Step{Name: name, Detail: err.Error()})
@@ -63,13 +66,10 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	}
 	done := func(name, detail string) { steps = append(steps, Step{Name: name, OK: true, Detail: detail}) }
 
-	token = strings.TrimSpace(token)
-	c := New(token)
-	if err := c.Verify(ctx); err != nil {
-		return fail("Check API token", err)
+	c, err := s.client(ctx)
+	if err != nil {
+		return fail("Sign in to Cloudflare", err)
 	}
-	done("Check API token", "")
-
 	zones, err := c.Zones(ctx)
 	if err != nil {
 		return fail("Find domain", err)
@@ -82,7 +82,7 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	}
 	if zone == nil {
 		if len(zones) == 0 {
-			return fail("Find domain", errors.New("the token can't see any domains; give it access to your zone"))
+			return fail("Find domain", errors.New("no domains on this Cloudflare account; add your domain to Cloudflare first"))
 		}
 		var names []string
 		for _, z := range zones {
@@ -140,7 +140,6 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 			z.ConnectedAt = now
 		}
 		c.Cloudflare.Zones[domain] = z
-		c.Cloudflare.Token = token
 		c.Cloudflare.TunnelID = tunnelID
 		c.Cloudflare.TunnelToken = tunnelToken
 		if primary {
@@ -211,6 +210,15 @@ func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host 
 	return tunnel.ID, token, nil
 }
 
+// Zones lists the domains the saved sign-in or API token can see.
+func (s *Setup) Zones(ctx context.Context) ([]Zone, error) {
+	c, err := s.client(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return c.Zones(ctx)
+}
+
 // Disconnect stops receiving mail for a secondary domain: its catch-all
 // rule is turned off in Cloudflare, and the domain and its aliases are
 // removed here. DNS records and accounts are left alone. The removal
@@ -226,7 +234,10 @@ func (s *Setup) Disconnect(ctx context.Context, domain string) (warning string, 
 	}
 	var cfErr error
 	if z, ok := cfg.Cloudflare.Zones[domain]; ok {
-		cfErr = New(cfg.Cloudflare.Token).DisableCatchAll(ctx, z.ID)
+		var c *Client
+		if c, cfErr = s.client(ctx); cfErr == nil {
+			cfErr = c.DisableCatchAll(ctx, z.ID)
+		}
 	}
 	if err := s.Cfg.Update(func(c *config.Config) {
 		c.Domains = slices.DeleteFunc(c.Domains, func(d string) bool { return d == domain })
@@ -282,7 +293,10 @@ func (s *Setup) publishAuthRecords(ctx context.Context, c *Client, zoneID, domai
 // EnableSending onboards every domain for Cloudflare Email Sending.
 func (s *Setup) EnableSending(ctx context.Context) error {
 	cfg := s.Cfg.Get()
-	c := New(cfg.Cloudflare.Token)
+	c, err := s.client(ctx)
+	if err != nil {
+		return err
+	}
 	for _, d := range cfg.Domains {
 		if z, ok := cfg.Cloudflare.Zones[d]; ok {
 			if err := s.onboardSending(ctx, c, z.ID, d); err != nil {
@@ -388,7 +402,10 @@ func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip st
 	if !ok {
 		return nil
 	}
-	c := New(cfg.Cloudflare.Token)
+	c, err := s.client(ctx)
+	if err != nil {
+		return err
+	}
 	if domain == cfg.Domain() {
 		if _, err := c.UpsertA(ctx, z.ID, cfg.Hostname, ip); err != nil {
 			return err
@@ -504,7 +521,11 @@ func (s *Setup) CheckStatus(ctx context.Context, probe func(ctx context.Context,
 		return st
 	}
 	st.Connected = true
-	c := New(cfg.Cloudflare.Token)
+	c, err := s.client(ctx)
+	if err != nil {
+		st.Error = err.Error()
+		return st
+	}
 	st.Domains = make([]DomainStatus, len(cfg.Domains))
 	var wg sync.WaitGroup
 	for i, d := range cfg.Domains {

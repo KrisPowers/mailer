@@ -42,7 +42,11 @@ type Config struct {
 }
 
 type Cloudflare struct {
-	Token string `json:"token"`
+	// Token is an API token, or the access token from signing in with
+	// Cloudflare, which RefreshToken renews before TokenExpiry.
+	Token        string    `json:"token"`
+	RefreshToken string    `json:"refresh_token,omitempty"`
+	TokenExpiry  time.Time `json:"token_expiry,omitempty"`
 	// The tunnel lives in the primary domain's account and zone.
 	AccountID     string    `json:"account_id"`
 	TunnelID      string    `json:"tunnel_id"`

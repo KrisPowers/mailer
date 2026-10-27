@@ -66,13 +66,27 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if auth := r.Header.Get("Authorization"); !strings.HasPrefix(p, "/oauth2/") &&
+		auth != "Bearer good-token" && auth != "Bearer access-1" && auth != "Bearer access-2" {
+		fmt.Fprint(w, `{"success":false,"errors":[{"message":"Invalid API Token"}]}`)
+		return
+	}
 	switch {
-	case p == "/user/tokens/verify":
-		if r.Header.Get("Authorization") != "Bearer good-token" {
-			fmt.Fprint(w, `{"success":false,"errors":[{"message":"Invalid API Token"}]}`)
-			return
+	case p == "/oauth2/token":
+		r.ParseForm()
+		switch {
+		case r.Form.Get("client_id") != oauthClientID:
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"invalid_client"}`)
+		case r.Form.Get("grant_type") == "authorization_code" && r.Form.Get("code") == "code-1" &&
+			r.Form.Get("code_verifier") != "" && r.Form.Get("redirect_uri") == oauthRedirect:
+			fmt.Fprint(w, `{"access_token":"access-1","refresh_token":"refresh-1","expires_in":3600}`)
+		case r.Form.Get("grant_type") == "refresh_token" && r.Form.Get("refresh_token") == "refresh-1":
+			fmt.Fprint(w, `{"access_token":"access-2","refresh_token":"refresh-2","expires_in":3600}`)
+		default:
+			w.WriteHeader(400)
+			fmt.Fprint(w, `{"error":"invalid_grant","error_description":"bad grant"}`)
 		}
-		ok(map[string]string{"status": "active"})
 	case p == "/zones":
 		var out []map[string]any
 		for _, id := range []string{"z1", "z2"} {
@@ -203,15 +217,20 @@ func TestConnect(t *testing.T) {
 		DKIMRecord: func(d string) (string, error) { return "v=DKIM1; k=rsa; p=KEY-" + d, nil }}
 	ctx := context.Background()
 
-	if _, err := s.Connect(ctx, "bad-token", ""); err == nil {
+	if _, err := s.Connect(ctx, ""); err == nil {
+		t.Fatal("connected without a credential")
+	}
+	s.UseToken("bad-token")
+	if _, err := s.Connect(ctx, ""); err == nil {
 		t.Fatal("bad token accepted")
 	}
-	if _, err := s.Connect(ctx, "good-token", ""); err == nil {
+	s.UseToken(" good-token ")
+	if _, err := s.Connect(ctx, ""); err == nil {
 		t.Fatal("two zones visible but no choice asked for")
 	}
 	// The second run of each must be a no-op repair.
 	for _, zone := range []string{"example.com", "example.com", "example.org", "example.org"} {
-		if steps, err := s.Connect(ctx, "good-token", zone); err != nil {
+		if steps, err := s.Connect(ctx, zone); err != nil {
 			t.Fatalf("%s: %v %+v", zone, err, steps)
 		}
 	}
