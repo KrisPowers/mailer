@@ -106,8 +106,9 @@ func serve(dataDir string) error {
 	hostname := func() string { return cfgm.Get().Hostname }
 
 	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger}
+	direct := &smtpclient.Client{Hostname: hostname, Resolver: resolver}
 	q, err := queue.New(filepath.Join(dataDir, "queue"),
-		&smtpclient.Client{Hostname: hostname, Resolver: resolver}, m.Bounce, logger)
+		&cloudflare.Relay{Cfg: cfgm, Direct: direct}, m.Bounce, logger)
 	if err != nil {
 		return err
 	}

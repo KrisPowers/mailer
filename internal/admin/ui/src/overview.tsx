@@ -56,7 +56,7 @@ export function statusOf(ov: Overview | null): StatusSummary {
     cf: !cf.connected ? "bad"
       : cf.tunnel_status === "healthy" && cf.public_healthy && cf.domains.every(domainOK) ? "ok" : "warn",
     ts: !ts.installed || !ts.running ? "bad" : ts.funnel_imap && ts.funnel_submission ? "ok" : "warn",
-    out: !p25 ? "none" : !p25.ok ? "bad" : ov.queue ? "warn" : "ok",
+    out: !p25 && !ov.send_via_cloudflare ? "none" : p25 && !p25.ok ? "bad" : ov.queue ? "warn" : "ok",
   };
 }
 

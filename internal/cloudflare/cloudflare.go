@@ -88,12 +88,13 @@ func (c *Client) ZoneID(ctx context.Context, name string) (string, error) {
 }
 
 type Record struct {
-	ID      string `json:"id,omitempty"`
-	Type    string `json:"type"`
-	Name    string `json:"name"`
-	Content string `json:"content"`
-	TTL     int    `json:"ttl"`
-	Proxied *bool  `json:"proxied,omitempty"`
+	ID       string `json:"id,omitempty"`
+	Type     string `json:"type"`
+	Name     string `json:"name"`
+	Content  string `json:"content"`
+	TTL      int    `json:"ttl"`
+	Priority *int   `json:"priority,omitempty"` // MX only
+	Proxied  *bool  `json:"proxied,omitempty"`
 }
 
 func (c *Client) CreateRecord(ctx context.Context, zoneID string, r Record) (string, error) {

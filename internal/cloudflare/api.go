@@ -217,6 +217,53 @@ func (c *Client) CatchAllWorker(ctx context.Context, zoneID string) (string, boo
 	return "", r.Enabled, nil
 }
 
+// ---- Email Sending ----
+
+// SendingDomain is a domain (or subdomain) onboarded for Email Sending.
+type SendingDomain struct {
+	Name    string `json:"name"`
+	Tag     string `json:"tag"`
+	Enabled bool   `json:"enabled"`
+}
+
+func (c *Client) SendingDomains(ctx context.Context, zoneID string) ([]SendingDomain, error) {
+	var out []SendingDomain
+	err := c.do(ctx, "GET", "/zones/"+zoneID+"/email/sending/subdomains", nil, &out)
+	return out, err
+}
+
+// EnableSending onboards name for Email Sending.
+func (c *Client) EnableSending(ctx context.Context, zoneID, name string) (*SendingDomain, error) {
+	var out SendingDomain
+	err := c.do(ctx, "POST", "/zones/"+zoneID+"/email/sending/subdomains", map[string]string{"name": name}, &out)
+	return &out, err
+}
+
+// SendingDNS lists the DNS records Email Sending needs for a domain.
+func (c *Client) SendingDNS(ctx context.Context, zoneID, tag string) ([]Record, error) {
+	var out []Record
+	err := c.do(ctx, "GET", "/zones/"+zoneID+"/email/sending/subdomains/"+tag+"/dns", nil, &out)
+	return out, err
+}
+
+// SendResult says what Cloudflare did with each recipient.
+type SendResult struct {
+	Delivered        []string `json:"delivered"`
+	PermanentBounces []string `json:"permanent_bounces"`
+	Queued           []string `json:"queued"`
+}
+
+// MaxSendBytes is Email Sending's message size limit.
+const MaxSendBytes = 5 << 20
+
+// SendRaw sends a complete MIME message through Email Sending.
+func (c *Client) SendRaw(ctx context.Context, accountID, from string, rcpts []string, mime string) (*SendResult, error) {
+	var out SendResult
+	err := c.do(ctx, "POST", "/accounts/"+accountID+"/email/sending/send_raw",
+		map[string]any{"from": from, "recipients": rcpts, "mime_message": mime}, &out)
+	return &out, err
+}
+
 func (c *Client) doRaw(ctx context.Context, method, path, contentType string, body io.Reader, out any) error {
 	req, err := http.NewRequestWithContext(ctx, method, apiBase+path, body)
 	if err != nil {

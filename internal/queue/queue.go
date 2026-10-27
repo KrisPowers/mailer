@@ -45,12 +45,17 @@ type Item struct {
 	Attempts int       `json:"attempts"`
 }
 
+// Deliverer sends a message to recipients that are all in domain.
+type Deliverer interface {
+	Deliver(ctx context.Context, domain, from string, rcpts []string, data []byte) []smtpclient.Result
+}
+
 // BounceFunc is called with recipients that permanently failed.
 type BounceFunc func(item *Item, failed []*Rcpt, original []byte)
 
 type Queue struct {
 	dir    string
-	client *smtpclient.Client
+	client Deliverer
 	bounce BounceFunc
 	log    *log.Logger
 
@@ -59,7 +64,7 @@ type Queue struct {
 	wake   chan struct{}
 }
 
-func New(dir string, client *smtpclient.Client, bounce BounceFunc, logger *log.Logger) (*Queue, error) {
+func New(dir string, client Deliverer, bounce BounceFunc, logger *log.Logger) (*Queue, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}

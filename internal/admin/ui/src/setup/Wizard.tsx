@@ -17,6 +17,7 @@ const PERMISSIONS = [
   "Zone · Zone Settings · Edit",
   "Zone · DNS · Edit",
   "Zone · Email Routing Rules · Edit",
+  "Email Sending · Edit (only to send through Cloudflare)",
 ];
 
 type StepNum = 1 | 2 | 3;
