@@ -92,6 +92,7 @@ func serve(dataDir string, headless bool) error {
 	}
 	if !headless {
 		retireScriptInstalls(dataDir)
+		retireOlderBuilds(dataDir)
 	}
 	logs := logbuf.New(1000)
 	// The log buffer goes first: the windowed build has no valid stderr,
