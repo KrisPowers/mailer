@@ -551,6 +551,13 @@ func generatePassword() string {
 	return string(b[:5]) + "-" + string(b[5:10]) + "-" + string(b[10:15]) + "-" + string(b[15:])
 }
 
+func passwordOr(pw string) string {
+	if pw == "" {
+		return generatePassword()
+	}
+	return pw
+}
+
 func (s *Server) normalizeLocal(input string) (string, error) {
 	cfg := s.Cfg.Get()
 	input = strings.ToLower(strings.TrimSpace(input))
@@ -570,8 +577,10 @@ func (s *Server) normalizeLocal(input string) (string, error) {
 	return users.Normalize(input)
 }
 
+// createAccount and resetPassword use the password given, or generate one
+// when it's empty.
 func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Email string }
+	var req struct{ Email, Password string }
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, 400, err)
 		return
@@ -581,7 +590,7 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err)
 		return
 	}
-	pw := generatePassword()
+	pw := passwordOr(req.Password)
 	if err := s.Users.Add(email, pw); err != nil {
 		writeErr(w, 400, err)
 		return
@@ -592,17 +601,17 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) resetPassword(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Email string }
+	var req struct{ Email, Password string }
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, 400, err)
 		return
 	}
-	pw := generatePassword()
+	pw := passwordOr(req.Password)
 	if err := s.Users.SetPassword(req.Email, pw); err != nil {
 		writeErr(w, 400, err)
 		return
 	}
-	s.Log.Printf("admin: reset password for %s", req.Email)
+	s.Log.Printf("admin: set password for %s", req.Email)
 	writeJSON(w, map[string]string{"email": req.Email, "password": pw})
 }
 

@@ -57,7 +57,7 @@ func TestSending(t *testing.T) {
 
 	cfgm.Update(func(c *config.Config) { c.SendViaCloudflare = true })
 	st := s.CheckStatus(ctx, func(context.Context, string) error { return nil })
-	if d := st.Domains[0]; !d.OK() || len(d.Checks) != 7 {
+	if d := st.Domains[0]; !d.OK() || len(d.Checks) != 8 {
 		t.Errorf("status with sending on: %+v", d.Checks)
 	}
 

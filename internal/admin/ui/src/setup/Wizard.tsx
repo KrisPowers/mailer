@@ -3,6 +3,7 @@ import { api } from "../api";
 import { AsyncButton } from "../components/AsyncButton";
 import { Icon } from "../components/Icon";
 import { CloseButton, Modal, useModal } from "../components/Modal";
+import { PasswordField } from "../components/PasswordField";
 import { useToast } from "../components/Toasts";
 import { setupStep, useOverview } from "../overview";
 import type { ConnectResult, Overview, TailscaleResult } from "../types";
@@ -173,14 +174,17 @@ function AccountStep({ ov }: { ov: Overview }) {
   const { open } = useModal();
   const { reload } = useOverview();
   const [name, setName] = useState("");
+  const [password, setPassword] = useState("");
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => input.current?.focus(), []);
   return (
     <Frame ov={ov} current={3} action={(
       <AsyncButton className="btn primary" onClick={async () => {
-        const c = await api.createAccount(name);
-        await reload();
+        const c = await api.createAccount(name, password);
+        // Show the password before reloading: once the account exists the
+        // wizard counts setup as done and closes itself.
         open(<PasswordModal title="Account created" email={c.email} password={c.password} />);
+        await reload();
       }}>Create account</AsyncButton>
     )}>
       <div>
@@ -192,6 +196,7 @@ function AccountStep({ ov }: { ov: Overview }) {
             <span>@{ov.domain}</span>
           </div>
         </div>
+        <PasswordField value={password} onChange={setPassword} />
       </div>
     </Frame>
   );

@@ -69,13 +69,36 @@ func (c *Client) TunnelToken(ctx context.Context, accountID, id string) (string,
 	return tok, err
 }
 
-// SetTunnelIngress routes hostname to service and 404s everything else.
-func (c *Client) SetTunnelIngress(ctx context.Context, accountID, id, hostname, service string) error {
-	body := map[string]any{"config": map[string]any{"ingress": []map[string]string{
-		{"hostname": hostname, "service": service},
-		{"service": "http_status:404"},
-	}}}
+// SetTunnelIngress routes each hostname to service and 404s everything else.
+func (c *Client) SetTunnelIngress(ctx context.Context, accountID, id string, hostnames []string, service string) error {
+	var rules []map[string]string
+	for _, h := range hostnames {
+		rules = append(rules, map[string]string{"hostname": h, "service": service})
+	}
+	rules = append(rules, map[string]string{"service": "http_status:404"})
+	body := map[string]any{"config": map[string]any{"ingress": rules}}
 	return c.do(ctx, "PUT", "/accounts/"+accountID+"/cfd_tunnel/"+id+"/configurations", body, nil)
+}
+
+// TunnelIngressHosts returns the hostnames the tunnel routes, in order.
+func (c *Client) TunnelIngressHosts(ctx context.Context, accountID, id string) ([]string, error) {
+	var r struct {
+		Config struct {
+			Ingress []struct {
+				Hostname string `json:"hostname"`
+			} `json:"ingress"`
+		} `json:"config"`
+	}
+	if err := c.do(ctx, "GET", "/accounts/"+accountID+"/cfd_tunnel/"+id+"/configurations", nil, &r); err != nil {
+		return nil, err
+	}
+	var hosts []string
+	for _, rule := range r.Config.Ingress {
+		if rule.Hostname != "" {
+			hosts = append(hosts, rule.Hostname)
+		}
+	}
+	return hosts, nil
 }
 
 // ---- DNS ----

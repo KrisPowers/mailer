@@ -42,6 +42,9 @@ at boot.
   hostname and the tunnel's address
 - Downloads `cloudflared` (official release, checksum-verified) and keeps it running
 - Keeps every domain's SPF updated when your home IP changes
+- Mail app settings: `autodiscover.<domain>` (Outlook) and `autoconfig.<domain>`
+  (Thunderbird and others) are routed through the tunnel and answer with the server
+  and ports, so a mail app needs only the address and password
 - Tailscale Funnel: IMAP on port 443 and sending on port 8443, with Tailscale's TLS
   certificate and the real client IP passed through for rate limiting
 
