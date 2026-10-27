@@ -21,6 +21,9 @@ services:
       TS_HOSTNAME: mail
       # Optional: a Tailscale auth key signs in without the dashboard link.
       TS_AUTHKEY: ${TS_AUTHKEY:-}
+      # 1 logs every command mail apps send (passwords hidden), for
+      # debugging sign-in and sync problems.
+      MAILER_TRACE: ${MAILER_TRACE:-0}
     logging:
       options:
         max-size: 10m
