@@ -95,9 +95,20 @@ func serve(dataDir string, headless bool) error {
 		retireOlderBuilds(dataDir)
 	}
 	logs := logbuf.New(1000)
-	// The log buffer goes first: the windowed build has no valid stderr,
-	// and MultiWriter stops at the first failed write.
-	logger := log.New(io.MultiWriter(logs, os.Stderr), "", log.LstdFlags)
+	// mailer.log keeps the log across restarts; the previous one is kept
+	// as mailer.log.old once it passes 5 MB.
+	logPath := filepath.Join(dataDir, "mailer.log")
+	if st, err := os.Stat(logPath); err == nil && st.Size() > 5<<20 {
+		os.Rename(logPath, logPath+".old")
+	}
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	defer logFile.Close()
+	// The windowed build has no valid stderr, and MultiWriter stops at the
+	// first failed write, so it goes last.
+	logger := log.New(io.MultiWriter(logs, logFile, os.Stderr), "", log.LstdFlags)
 
 	cfgm, err := config.Open(dataDir)
 	if err != nil {

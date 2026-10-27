@@ -7,9 +7,11 @@ export interface Step {
 }
 
 export interface Check {
+  area: "cloudflare" | "tailscale" | "sending";
   name: string;
   ok: boolean;
   detail: string;
+  fix?: string;
 }
 
 export interface DomainStatus {

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
 import type { Health } from "./components/Badge";
-import type { DomainStatus, Overview } from "./types";
+import type { Check, DomainStatus, Overview } from "./types";
 
 interface OverviewState {
   ov: Overview | null;
@@ -46,26 +46,23 @@ export interface StatusSummary {
   out: Health;
 }
 
+export type Area = Check["area"];
+
+// statusOf colours each status icon from its checks: red when any failed,
+// amber when sending works but mail is waiting in the queue.
 export function statusOf(ov: Overview | null): StatusSummary {
-  const c = ov?.checks;
-  if (!ov || !c) return { cf: "none", ts: "none", out: "none" };
-  const cf = c.cloudflare;
-  const ts = c.tailscale;
-  const p25 = port25(ov);
-  return {
-    cf: !cf.connected ? "bad"
-      : cf.tunnel_status === "healthy" && cf.public_healthy && cf.domains.every(domainOK) ? "ok" : "warn",
-    ts: !ts.installed || !ts.running ? "bad" : ts.funnel_imap && ts.funnel_submission ? "ok" : "warn",
-    out: !p25 && !ov.send_via_cloudflare ? "none" : p25 && !p25.ok ? "bad" : ov.queue ? "warn" : "ok",
+  const items = ov?.checks?.items;
+  if (!ov || !items) return { cf: "none", ts: "none", out: "none" };
+  const health = (area: Area): Health => {
+    const a = items.filter((i) => i.area === area);
+    return !a.length ? "none" : a.every((i) => i.ok) ? "ok" : "bad";
   };
+  const out = health("sending");
+  return { cf: health("cloudflare"), ts: health("tailscale"), out: out === "ok" && ov.queue ? "warn" : out };
 }
 
 export function domainOK(d: DomainStatus): boolean {
   return !d.error && d.checks.length > 0 && d.checks.every((c) => c.ok);
-}
-
-export function port25(ov: Overview | null) {
-  return ov?.checks?.items.find((i) => i.name.startsWith("Outbound port 25"));
 }
 
 // setupStep is the first unfinished setup step: 1 Cloudflare, 2 Tailscale,

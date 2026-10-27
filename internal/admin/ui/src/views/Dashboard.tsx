@@ -49,7 +49,7 @@ export function Dashboard() {
                       <td><Icon name={i.ok ? "check" : "alert"} /></td>
                       <td className="wrap">{i.name}<div className="sub-detail">{i.detail}</div></td>
                       <td><Badge kind={i.ok ? "ok" : "bad"}>{i.ok ? "OK" : "Problem"}</Badge></td>
-                      <td className="detail">{i.detail}</td>
+                      <td className="detail">{i.detail}{i.fix && <div className="fix">{i.fix}</div>}</td>
                     </tr>
                   )) : <tr><td colSpan={4} className="empty">Checking…</td></tr>}
                 </tbody>
