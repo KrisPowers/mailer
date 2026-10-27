@@ -116,6 +116,10 @@ func serve(dataDir, listenHost string) error {
 		MaxSize: maxClientMessage, Backend: mta.Submission{MTA: m}, Log: logger, Audit: signIns}
 	im := &imap.Server{Hostname: hostname, Users: db, Store: st, Limiter: limiter,
 		MaxMessage: maxClientMessage, Log: logger, Audit: signIns}
+	// MAILER_TRACE=1 logs every mail app command, for debugging sign-in
+	// and sync problems.
+	sub.Trace = os.Getenv("MAILER_TRACE") == "1"
+	im.Trace = sub.Trace
 
 	// Mail ports listen on loopback only: the internet reaches them through
 	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients),

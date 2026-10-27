@@ -33,6 +33,9 @@ type Server struct {
 	MaxMessage   int64
 	Log          *log.Logger
 	Audit        *audit.Log
+	// Trace logs every line a client sends, and every command's result,
+	// with sign-in secrets hidden.
+	Trace bool
 }
 
 // Serve accepts connections until l is closed. If terminated is true, TLS
@@ -195,7 +198,13 @@ func (s *session) readCommand() ([]byte, error) {
 	for {
 		line, err := s.readLine()
 		if err != nil {
+			if s.srv.Trace {
+				s.srv.Log.Printf("imap trace %s: read ended: %v", s.ip, err)
+			}
 			return nil, err
+		}
+		if s.srv.Trace {
+			s.srv.Log.Printf("imap trace %s %s < %s", s.ip, s.user, traceLine(string(line)))
 		}
 		buf = append(buf, line...)
 		n, nonSync, isLit := literalSuffix(line)
@@ -296,6 +305,9 @@ func (s *session) dispatch(tag, cmd string, argBytes []byte) (done bool) {
 	allowExpunge := uid || (cmd != "FETCH" && cmd != "STORE" && cmd != "SEARCH")
 	s.sync(allowExpunge)
 	s.writef("%s %s %s\r\n", tag, res.status, res.text)
+	if s.srv.Trace {
+		s.srv.Log.Printf("imap trace %s %s > %s %s %s", s.ip, s.user, tag, res.status, sanitize(res.text, 200))
+	}
 	return false
 }
 
@@ -387,6 +399,21 @@ func (s *session) authenticated(cmd string, args []token, uid bool) result {
 }
 
 // ---- authentication ----
+
+// traceLine shortens a client line for the trace and hides what follows
+// LOGIN or AUTHENTICATE.
+func traceLine(l string) string {
+	f := strings.Fields(l)
+	for i, w := range f {
+		if (strings.EqualFold(w, "LOGIN") || strings.EqualFold(w, "AUTHENTICATE")) && i+1 < len(f) {
+			return strings.Join(f[:i+2], " ") + " [hidden]"
+		}
+	}
+	if len(f) == 1 && len(l) > 40 && !strings.ContainsAny(l, " ()") {
+		return "[" + fmt.Sprint(len(l)) + " bytes hidden]" // a bare SASL response
+	}
+	return sanitize(l, 300)
+}
 
 // clientID names the app from the fields it sent with ID.
 func clientID(args []token) string {
