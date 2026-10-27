@@ -162,7 +162,7 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 	c := &Checks{At: time.Now()}
 
 	var wg sync.WaitGroup
-	wg.Add(3)
+	wg.Add(2)
 	go func() {
 		defer wg.Done()
 		c.Cloudflare = s.Setup.CheckStatus(ctx, probeHealth)
@@ -170,11 +170,6 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 	go func() {
 		defer wg.Done()
 		c.Tailscale = tailscale.GetStatus(ctx, cfg.Ports.IMAP, cfg.Ports.Submission)
-	}()
-	var port25 error
-	go func() {
-		defer wg.Done()
-		port25 = probeSMTP(ctx, "gmail-smtp-in.l.google.com:25")
 	}()
 	wg.Wait()
 	c.Tunnel = s.Tunnel.Status()
@@ -229,12 +224,23 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 				"Funnel is on but the mail server didn't answer through it. "+enable)
 		}
 	}
-	if cfg.SendViaCloudflare {
-		add("sending", "Sending", true, "through Cloudflare Email Sending", "")
-	} else {
-		add("sending", "Outbound port 25", port25 == nil, errText(port25, "your internet provider allows sending mail"),
-			"Your internet provider blocks port 25, so mail to other servers can't leave this computer and waits in the queue. "+
-				"Turn on Send through Cloudflare in Settings (needs Cloudflare's Workers Paid plan).")
+	// Outgoing mail only leaves through Cloudflare Email Sending.
+	if cf.Connected && cf.Error == "" {
+		var off []string
+		for _, d := range cf.Domains {
+			for _, ch := range d.Checks {
+				if ch.Name == "Email Sending" && !ch.OK {
+					off = append(off, d.Name+": "+ch.Detail)
+				}
+			}
+		}
+		detail := "outgoing mail leaves through Cloudflare"
+		if len(off) > 0 {
+			detail = strings.Join(off, "; ")
+		}
+		add("sending", "Cloudflare Email Sending", len(off) == 0, detail,
+			"Outgoing mail waits in the queue until Cloudflare takes it. Email Sending needs the Workers Paid plan "+
+				"on the Cloudflare account; once it's on, "+repair)
 	}
 	if t := s.MTA.LastInbound(); !t.IsZero() {
 		add("sending", "Last message received", true, t.Format("Jan 2 15:04"), "")
@@ -287,21 +293,6 @@ func probeHealth(ctx context.Context, url string) error {
 	return nil
 }
 
-func probeSMTP(ctx context.Context, addr string) error {
-	d := net.Dialer{Timeout: 8 * time.Second}
-	c, err := d.DialContext(ctx, "tcp4", addr)
-	if err != nil {
-		return errors.New("blocked or unreachable (your ISP may block port 25)")
-	}
-	defer c.Close()
-	c.SetDeadline(time.Now().Add(8 * time.Second))
-	line, err := bufio.NewReader(c).ReadString('\n')
-	if err != nil || !strings.HasPrefix(line, "220") {
-		return errors.New("connected but no SMTP greeting")
-	}
-	return nil
-}
-
 func probeIMAP(ctx context.Context, addr string) error {
 	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 10 * time.Second}}
 	c, err := d.DialContext(ctx, "tcp", addr)
@@ -344,19 +335,18 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		client = &clientSettings{dnsName, config.PublicIMAPPort, config.PublicSubmissionPort}
 	}
 	writeJSON(w, map[string]any{
-		"domain":              cfg.Domain(),
-		"domains":             cfg.Domains,
-		"hostname":            cfg.Hostname,
-		"cloudflare_setup":    cfg.Connected(),
-		"tailscale_setup":     !cfg.Tailscale.EnabledAt.IsZero(),
-		"send_via_cloudflare": cfg.SendViaCloudflare,
-		"accounts":            len(s.Users.List()),
-		"queue":               len(q),
-		"checks":              checks,
-		"client":              client,
-		"last_inbound":        s.MTA.LastInbound(),
-		"connected_at":        cfg.Cloudflare.ConnectedAt,
-		"funnel_at":           cfg.Tailscale.EnabledAt,
+		"domain":           cfg.Domain(),
+		"domains":          cfg.Domains,
+		"hostname":         cfg.Hostname,
+		"cloudflare_setup": cfg.Connected(),
+		"tailscale_setup":  !cfg.Tailscale.EnabledAt.IsZero(),
+		"accounts":         len(s.Users.List()),
+		"queue":            len(q),
+		"checks":           checks,
+		"client":           client,
+		"last_inbound":     s.MTA.LastInbound(),
+		"connected_at":     cfg.Cloudflare.ConnectedAt,
+		"funnel_at":        cfg.Tailscale.EnabledAt,
 	})
 }
 
@@ -731,13 +721,12 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 type settingsView struct {
 	RejectDMARCFailures bool  `json:"reject_dmarc_failures"`
 	SaveSentCopy        bool  `json:"save_sent_copy"`
-	SendViaCloudflare   bool  `json:"send_via_cloudflare"`
 	MaxMessageMB        int64 `json:"max_message_mb"`
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Cfg.Get()
-	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.SendViaCloudflare, cfg.MaxMessageBytes >> 20})
+	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.MaxMessageBytes >> 20})
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -750,21 +739,9 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, errors.New("max message size must be 1–25 MB (Cloudflare's limit is 25 MB)"))
 		return
 	}
-	// Onboard every domain before switching sending over, so mail never
-	// goes to Cloudflare for a domain it won't send for.
-	if v.SendViaCloudflare && !s.Cfg.Get().SendViaCloudflare {
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
-		defer cancel()
-		if err := s.Setup.EnableSending(ctx); err != nil {
-			writeErr(w, 400, fmt.Errorf("couldn't turn on Cloudflare Email Sending: %w", err))
-			return
-		}
-		s.Log.Printf("admin: sending through Cloudflare Email Sending")
-	}
 	err := s.Cfg.Update(func(c *config.Config) {
 		c.RejectDMARCFailures = v.RejectDMARCFailures
 		c.SaveSentCopy = v.SaveSentCopy
-		c.SendViaCloudflare = v.SendViaCloudflare
 		c.MaxMessageBytes = v.MaxMessageMB << 20
 	})
 	if err != nil {

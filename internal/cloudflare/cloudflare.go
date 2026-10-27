@@ -1,15 +1,13 @@
-// Package cloudflare is a minimal client for the Cloudflare DNS API, used for
-// ACME DNS-01 challenges and dynamic DNS.
+// Package cloudflare is a minimal client for the Cloudflare API: tunnel,
+// DNS, Workers, Email Routing and Email Sending.
 package cloudflare
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -114,50 +112,4 @@ func (c *Client) ListRecords(ctx context.Context, zoneID, typ, name string) ([]R
 	q := url.Values{"type": {typ}, "name": {name}}
 	err := c.do(ctx, "GET", "/zones/"+zoneID+"/dns_records?"+q.Encode(), nil, &out)
 	return out, err
-}
-
-// UpsertA points name's A record at ip. Mail hostnames must never be
-// proxied (orange cloud): Cloudflare's proxy only carries HTTP.
-func (c *Client) UpsertA(ctx context.Context, zoneID, name, ip string) (changed bool, err error) {
-	recs, err := c.ListRecords(ctx, zoneID, "A", name)
-	if err != nil {
-		return false, err
-	}
-	off := false
-	want := Record{Type: "A", Name: name, Content: ip, TTL: 300, Proxied: &off}
-	if len(recs) == 0 {
-		_, err := c.CreateRecord(ctx, zoneID, want)
-		return err == nil, err
-	}
-	if recs[0].Content == ip && recs[0].Proxied != nil && !*recs[0].Proxied {
-		return false, nil
-	}
-	return true, c.do(ctx, "PUT", "/zones/"+zoneID+"/dns_records/"+recs[0].ID, want, nil)
-}
-
-// PublicIPv4 asks Cloudflare's edge which address we're connecting from.
-func PublicIPv4(ctx context.Context) (string, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	tr := &http.Transport{DialContext: func(ctx context.Context, _, addr string) (net.Conn, error) {
-		return dialer.DialContext(ctx, "tcp4", addr)
-	}}
-	hc := &http.Client{Transport: tr, Timeout: 15 * time.Second}
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://1.1.1.1/cdn-cgi/trace", nil)
-	resp, err := hc.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	if err != nil {
-		return "", err
-	}
-	for _, line := range strings.Split(string(b), "\n") {
-		if ip, ok := strings.CutPrefix(line, "ip="); ok {
-			if parsed := net.ParseIP(strings.TrimSpace(ip)); parsed != nil && parsed.To4() != nil {
-				return parsed.String(), nil
-			}
-		}
-	}
-	return "", errors.New("could not determine public IPv4 address")
 }

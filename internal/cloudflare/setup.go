@@ -19,8 +19,6 @@ import (
 //go:embed worker/inbound.js
 var workerJS string
 
-var publicIP = PublicIPv4 // replaced in tests
-
 // Step is one line of the setup checklist shown in the admin UI.
 type Step struct {
 	Name   string `json:"name"`
@@ -54,7 +52,7 @@ const workerName = "email-inbound"
 
 // Connect connects zoneName (or the account's only zone) to this server
 // with the saved sign-in or API token: tunnel, Email Worker, Email
-// Routing, DKIM, DMARC and SPF. The first
+// Routing, Email Sending, DKIM, DMARC and SPF. The first
 // domain connected is the primary: it carries the server's hostname and
 // the tunnel's inbound address. Connect is idempotent: running it again
 // repairs whatever is missing.
@@ -163,21 +161,15 @@ func (s *Setup) Connect(ctx context.Context, zoneName string) ([]Step, error) {
 	}
 	done("Publish DKIM / DMARC", "")
 
-	if cfg.SendViaCloudflare {
-		if err := s.onboardSending(ctx, c, zone.ID, domain); err != nil {
-			return fail("Turn on Email Sending", err)
-		}
-		done("Turn on Email Sending", "")
+	if err := s.onboardSending(ctx, c, zone.ID, domain); err != nil {
+		return fail("Turn on Email Sending", fmt.Errorf("%w (Email Sending needs the Workers Paid plan on this Cloudflare account)", err))
 	}
+	done("Turn on Email Sending", "outgoing mail leaves through Cloudflare")
 
-	ip, err := publicIP(ctx)
-	if err == nil {
-		err = s.syncDomain(ctx, s.Cfg.Get(), domain, ip)
+	if err := s.syncDomain(ctx, s.Cfg.Get(), domain); err != nil {
+		return fail("Publish SPF", err)
 	}
-	if err != nil {
-		return fail("Publish sending IP (SPF)", err)
-	}
-	done("Publish sending IP (SPF)", ip)
+	done("Publish SPF", "")
 
 	if err := s.syncClientHosts(ctx, c, s.Cfg.Get()); err != nil {
 		return fail("Publish mail app settings", err)
@@ -350,23 +342,6 @@ func (s *Setup) publishAuthRecords(ctx context.Context, c *Client, zoneID, domai
 	return err
 }
 
-// EnableSending onboards every domain for Cloudflare Email Sending.
-func (s *Setup) EnableSending(ctx context.Context) error {
-	cfg := s.Cfg.Get()
-	c, err := s.client(ctx)
-	if err != nil {
-		return err
-	}
-	for _, d := range cfg.Domains {
-		if z, ok := cfg.Cloudflare.Zones[d]; ok {
-			if err := s.onboardSending(ctx, c, z.ID, d); err != nil {
-				return fmt.Errorf("%s: %w", d, err)
-			}
-		}
-	}
-	return nil
-}
-
 // onboardSending turns on Email Sending for domain and publishes the DNS
 // records it asks for.
 func (s *Setup) onboardSending(ctx context.Context, c *Client, zoneID, domain string) error {
@@ -436,21 +411,18 @@ func tagOf(v string) string {
 	return strings.ToLower(f[0])
 }
 
-// SyncDNS publishes this machine's current public IP as the A record for the
-// HELO hostname and in every domain's SPF record, so replies sent directly
-// from home authenticate. It returns the IP.
-func (s *Setup) SyncDNS(ctx context.Context) (string, error) {
+// SyncDNS keeps every domain's SPF record and mail app settings names in
+// place. Mail leaves through Cloudflare Email Sending, so this machine's
+// IP is not published: an address older versions put in SPF, and the A
+// record they pointed the server's hostname at it with, are removed.
+func (s *Setup) SyncDNS(ctx context.Context) error {
 	cfg := s.Cfg.Get()
 	if !cfg.Connected() {
-		return "", errors.New("Cloudflare is not connected")
-	}
-	ip, err := publicIP(ctx)
-	if err != nil {
-		return "", err
+		return errors.New("Cloudflare is not connected")
 	}
 	var errs []error
 	for _, d := range cfg.Domains {
-		if err := s.syncDomain(ctx, cfg, d, ip); err != nil {
+		if err := s.syncDomain(ctx, cfg, d); err != nil {
 			errs = append(errs, fmt.Errorf("%s: %w", d, err))
 		}
 	}
@@ -461,10 +433,10 @@ func (s *Setup) SyncDNS(ctx context.Context) (string, error) {
 	if err != nil {
 		errs = append(errs, fmt.Errorf("mail app settings: %w", err))
 	}
-	return ip, errors.Join(errs...)
+	return errors.Join(errs...)
 }
 
-func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip string) error {
+func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain string) error {
 	z, ok := cfg.Cloudflare.Zones[domain]
 	if !ok {
 		return nil
@@ -473,9 +445,18 @@ func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip st
 	if err != nil {
 		return err
 	}
-	if domain == cfg.Domain() {
-		if _, err := c.UpsertA(ctx, z.ID, cfg.Hostname, ip); err != nil {
+	if domain == cfg.Domain() && z.SPFIP != "" {
+		recs, err := c.ListRecords(ctx, z.ID, "A", cfg.Hostname)
+		if err != nil {
 			return err
+		}
+		for _, r := range recs {
+			if r.Content == z.SPFIP {
+				if err := c.DeleteRecord(ctx, z.ID, r.ID); err != nil {
+					return err
+				}
+				s.Log.Printf("dns: removed %s A %s", cfg.Hostname, r.Content)
+			}
 		}
 	}
 	recs, err := c.ListRecords(ctx, z.ID, "TXT", domain)
@@ -489,7 +470,7 @@ func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip st
 			break
 		}
 	}
-	want := MergeSPF(existing, ip, z.SPFIP)
+	want := MergeSPF(existing, z.SPFIP)
 	if want != existing {
 		if err := c.UpsertRecord(ctx, z.ID, Record{Type: "TXT", Name: domain, Content: want, TTL: 1},
 			func(r Record) bool { return strings.HasPrefix(unquote(r.Content), "v=spf1") }); err != nil {
@@ -497,10 +478,10 @@ func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip st
 		}
 		s.Log.Printf("dns: SPF for %s is now %q", domain, want)
 	}
-	if z.SPFIP != ip {
+	if z.SPFIP != "" {
 		s.Cfg.Update(func(c *config.Config) {
 			if cur, ok := c.Cloudflare.Zones[domain]; ok {
-				cur.SPFIP = ip
+				cur.SPFIP = ""
 				c.Cloudflare.Zones[domain] = cur
 			}
 		})
@@ -508,9 +489,10 @@ func (s *Setup) syncDomain(ctx context.Context, cfg config.Config, domain, ip st
 	return nil
 }
 
-// MergeSPF returns existing with Cloudflare's include and ip4:newIP present,
-// dropping our previously published oldIP. Other mechanisms are preserved.
-func MergeSPF(existing, newIP, oldIP string) string {
+// MergeSPF returns existing with Cloudflare's include present and oldIP,
+// the address older versions published, dropped. Other mechanisms are
+// preserved.
+func MergeSPF(existing, oldIP string) string {
 	terms := strings.Fields(existing)
 	if len(terms) == 0 || !strings.EqualFold(terms[0], "v=spf1") {
 		terms = []string{"v=spf1", spfInclude, "~all"}
@@ -522,7 +504,7 @@ func MergeSPF(existing, newIP, oldIP string) string {
 	for _, t := range terms[1:] {
 		lt := strings.ToLower(t)
 		switch {
-		case oldIP != "" && lt == "ip4:"+oldIP, lt == "ip4:"+newIP:
+		case oldIP != "" && lt == "ip4:"+oldIP:
 			continue
 		case lt == "all" || (len(lt) == 4 && strings.HasSuffix(lt, "all")):
 			all = t
@@ -538,7 +520,7 @@ func MergeSPF(existing, newIP, oldIP string) string {
 	if !hasInclude {
 		out = append(out, spfInclude)
 	}
-	out = append(out, "ip4:"+newIP, all)
+	out = append(out, all)
 	if redirect != "" {
 		// "all" makes redirect unreachable, so a redirect replaces it.
 		out[len(out)-1] = redirect
@@ -674,8 +656,7 @@ func (s *Setup) checkDomain(ctx context.Context, c *Client, cfg config.Config, d
 		case len(spf) > 1:
 			add("SPF", false, "more than one SPF record")
 		default:
-			ok := strings.Contains(spf[0], spfInclude) && (z.SPFIP == "" || strings.Contains(spf[0], "ip4:"+z.SPFIP))
-			add("SPF", ok, spf[0])
+			add("SPF", strings.Contains(spf[0], spfInclude), spf[0])
 		}
 	}
 
@@ -695,14 +676,12 @@ func (s *Setup) checkDomain(ctx context.Context, c *Client, cfg config.Config, d
 		}
 	}
 
-	if cfg.SendViaCloudflare {
-		if sds, err := c.SendingDomains(ctx, z.ID); err != nil {
-			add("Email Sending", false, err.Error())
-		} else if slices.ContainsFunc(sds, func(d SendingDomain) bool { return strings.EqualFold(d.Name, domain) && d.Enabled }) {
-			add("Email Sending", true, "enabled")
-		} else {
-			add("Email Sending", false, "not enabled for "+domain)
-		}
+	if sds, err := c.SendingDomains(ctx, z.ID); err != nil {
+		add("Email Sending", false, err.Error())
+	} else if slices.ContainsFunc(sds, func(d SendingDomain) bool { return strings.EqualFold(d.Name, domain) && d.Enabled }) {
+		add("Email Sending", true, "enabled")
+	} else {
+		add("Email Sending", false, "not enabled for "+domain)
 	}
 
 	missing := []string{}

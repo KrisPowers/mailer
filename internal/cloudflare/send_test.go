@@ -1,6 +1,7 @@
 package cloudflare
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log"
@@ -15,7 +16,6 @@ func TestSending(t *testing.T) {
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
 	apiBase = srv.URL
-	publicIP = func(context.Context) (string, error) { return "203.0.113.50", nil }
 
 	cfgm, err := config.Open(t.TempDir())
 	if err != nil {
@@ -25,13 +25,11 @@ func TestSending(t *testing.T) {
 		DKIMRecord: func(d string) (string, error) { return "v=DKIM1; k=rsa; p=KEY", nil }}
 	ctx := context.Background()
 	s.UseToken("good-token")
-	if _, err := s.Connect(ctx, "example.com"); err != nil {
-		t.Fatal(err)
-	}
 
-	// Onboarding twice publishes each record once.
+	// Connecting twice onboards Email Sending once and publishes each
+	// record once.
 	for range 2 {
-		if err := s.EnableSending(ctx); err != nil {
+		if _, err := s.Connect(ctx, "example.com"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -50,15 +48,14 @@ func TestSending(t *testing.T) {
 	one("TXT", "cf-bounce._domainkey.example.com", "v=DKIM1; k=rsa; p=CF")
 	// The domain's own DMARC and SPF are kept.
 	one("TXT", "_dmarc.example.com", defaultDMARC)
-	one("TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ip4:203.0.113.50 ~all")
+	one("TXT", "example.com", "v=spf1 include:_spf.mx.cloudflare.net ~all")
 	if mx := fake.find("z1", "MX", "cf-bounce.example.com"); len(mx) == 1 && (mx[0].Priority == nil || *mx[0].Priority != 10) {
 		t.Error("MX priority not kept")
 	}
 
-	cfgm.Update(func(c *config.Config) { c.SendViaCloudflare = true })
 	st := s.CheckStatus(ctx, func(context.Context, string) error { return nil })
 	if d := st.Domains[0]; !d.OK() || len(d.Checks) != 8 {
-		t.Errorf("status with sending on: %+v", d.Checks)
+		t.Errorf("status: %+v", d.Checks)
 	}
 
 	relay := &Relay{Setup: s}
@@ -69,5 +66,23 @@ func TestSending(t *testing.T) {
 	}
 	if res[0].Err != nil || res[1].Err == nil || !res[1].Permanent {
 		t.Errorf("results: %+v", res)
+	}
+
+	// Nothing goes out directly: what Email Sending can't take fails for good.
+	for name, c := range map[string]struct {
+		from string
+		data []byte
+	}{
+		"too big":        {"me@example.com", append(bytes.Repeat([]byte("x"), MaxSendBytes), msg...)},
+		"not UTF-8":      {"me@example.com", append([]byte("X-Bad: \xff\r\n"), msg...)},
+		"unknown domain": {"me@elsewhere.net", msg},
+	} {
+		res := relay.Deliver(ctx, "other.net", c.from, []string{"ok@other.net"}, c.data)
+		if res[0].Err == nil || !res[0].Permanent {
+			t.Errorf("%s: %+v", name, res)
+		}
+	}
+	if len(fake.sent) != 1 {
+		t.Errorf("sent %d messages, want 1", len(fake.sent))
 	}
 }

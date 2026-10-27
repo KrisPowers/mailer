@@ -71,7 +71,6 @@ export interface Overview {
   hostname: string;
   cloudflare_setup: boolean;
   tailscale_setup: boolean;
-  send_via_cloudflare: boolean;
   accounts: number;
   queue: number;
   checks: Checks | null;
@@ -131,7 +130,6 @@ export interface Zone {
 export interface Settings {
   reject_dmarc_failures: boolean;
   save_sent_copy: boolean;
-  send_via_cloudflare: boolean;
   max_message_mb: number;
 }
 
