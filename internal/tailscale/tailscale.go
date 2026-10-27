@@ -14,6 +14,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"mailer/internal/console"
 )
 
 // find locates the tailscale CLI, including the default install locations
@@ -44,7 +46,7 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd := console.Hide(exec.CommandContext(ctx, bin, args...))
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err = cmd.Run()
