@@ -17,12 +17,12 @@ where everything is set up and managed.
 1. **Build:** `scripts\build.ps1` (needs Go and Node.js) makes `builds\Mailer.exe`.
 2. **Install [Tailscale](https://tailscale.com/download)** and sign in.
 3. **Open `Mailer.exe`** and, in its window:
-   - **Open token page** (Cloudflare opens with the permissions filled in), click
-     **Continue to summary** → **Create Token**, paste the token back → **Connect**
+   - **Connect Cloudflare**, then approve in the browser window that opens. Mailer
+     signs in through Cloudflare's own `cf` command-line app, keeps the sign-in
+     renewed, and sets everything up by itself.
    - **Tailscale → Enable**. The first time, Tailscale may show one link to allow Funnel.
    - **Accounts → Create account**
-   - more domains: **Domains → Add domain** (the token must be able to see them:
-     list each under Zone Resources, or pick All zones)
+   - more domains: **Domains → Add domain** (any domain on your Cloudflare account)
 
 The window then shows the server address and ports to enter in Outlook or the Gmail app.
 
@@ -53,7 +53,7 @@ ISPs block port 25, and some receivers junk mail from home connections. If the
 Overview shows port 25 blocked, turn on **Settings → Send through Cloudflare**: mail
 is handed to [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/)
 instead, which onboards every domain and publishes its records. It needs the Workers
-Paid plan and the token's **Email Sending · Edit** permission. Messages over 5 MB
+Paid plan. Messages over 5 MB
 still go direct.
 
 ## The app window
