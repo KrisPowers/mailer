@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"mailer/internal/audit"
 	"mailer/internal/message"
 	"mailer/internal/proxyproto"
 	"mailer/internal/store"
@@ -31,6 +32,7 @@ type Server struct {
 	InsecureAuth bool
 	MaxMessage   int64
 	Log          *log.Logger
+	Audit        *audit.Log
 }
 
 // Serve accepts connections until l is closed. If terminated is true, TLS
@@ -70,6 +72,12 @@ type session struct {
 	ip   string
 	tls  bool
 
+	// For the sign-in audit: the app's name from ID, the commands it sent
+	// before signing in, and whether an attempt was recorded.
+	client  string
+	cmds    []string
+	audited bool
+
 	user    string
 	acct    *store.Account
 	watch   <-chan struct{}
@@ -97,6 +105,9 @@ func (srv *Server) handle(c net.Conn, terminated bool) {
 			s.unwatch()
 		}
 		s.conn.Close()
+		if !s.audited && len(s.cmds) > 0 {
+			s.audit("", audit.NoSignIn, "disconnected without signing in")
+		}
 	}()
 	if terminated {
 		pc, ip, err := proxyproto.Read(c, 2*time.Second)
@@ -209,6 +220,15 @@ func (s *session) readCommand() ([]byte, error) {
 }
 
 func (s *session) dispatch(tag, cmd string, argBytes []byte) (done bool) {
+	if s.user == "" && len(s.cmds) < 20 {
+		c := cmd
+		if cmd == "AUTHENTICATE" {
+			mech, _, _ := bytes.Cut(argBytes, []byte(" "))
+			c += " " + sanitize(strings.ToUpper(string(mech)), 40)
+		}
+		s.cmds = append(s.cmds, c)
+	}
+
 	// IDLE and AUTHENTICATE read further lines themselves.
 	switch cmd {
 	case "IDLE":
@@ -253,6 +273,7 @@ func (s *session) dispatch(tag, cmd string, argBytes []byte) (done bool) {
 		s.writef("* BYE logging out\r\n%s OK LOGOUT completed\r\n", tag)
 		return true
 	case "ID":
+		s.client = clientID(args)
 		s.writef("* ID (\"name\" \"mailer\")\r\n")
 		res = ok("ID completed")
 	case "STARTTLS":
@@ -367,34 +388,84 @@ func (s *session) authenticated(cmd string, args []token, uid bool) result {
 
 // ---- authentication ----
 
-func (s *session) authAllowed() result {
-	if !s.tls && !s.srv.InsecureAuth {
-		return no("[PRIVACYREQUIRED] use STARTTLS or port 993")
+// clientID names the app from the fields it sent with ID.
+func clientID(args []token) string {
+	if len(args) == 0 || args[0].kind != tList {
+		return ""
 	}
+	f := map[string]string{}
+	l := args[0].list
+	for i := 0; i+1 < len(l); i += 2 {
+		f[strings.ToLower(l[i].s)] = l[i+1].s
+	}
+	id := strings.TrimSpace(f["name"] + " " + f["version"])
+	if id == "" {
+		id = f["vendor"]
+	}
+	return sanitize(id, 100)
+}
+
+// sanitize keeps a client-supplied string printable and short.
+func sanitize(v string, n int) string {
+	v = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+		return r
+	}, v)
+	if len(v) > n {
+		v = v[:n]
+	}
+	return v
+}
+
+// audit records a sign-in attempt, or a connection that left without one.
+func (s *session) audit(user, res, detail string) {
+	s.audited = true
+	s.srv.Audit.Add(audit.Event{Proto: "imap", IP: s.ip, Client: s.client, User: sanitize(user, 200),
+		Result: res, Detail: detail, Commands: s.cmds})
+}
+
+func (s *session) authAllowed(user string) result {
 	if s.user != "" {
 		return bad("already authenticated")
 	}
+	if !s.tls && !s.srv.InsecureAuth {
+		s.audit(user, audit.NeedsTLS, "tried to sign in without TLS")
+		return no("[PRIVACYREQUIRED] use STARTTLS or port 993")
+	}
 	if s.srv.Limiter.Blocked(s.ip) {
+		s.audit(user, audit.Blocked, "too many failed sign-ins from this address in the last 15 minutes")
 		return no("[UNAVAILABLE] too many failed logins; try later")
 	}
 	return result{}
 }
 
 func (s *session) login(args []token) result {
-	if r := s.authAllowed(); r.status != "" {
+	user := ""
+	if len(args) > 0 {
+		user = args[0].s
+	}
+	if r := s.authAllowed(user); r.status != "" {
 		return r
 	}
 	if len(args) != 2 {
+		s.audit(user, audit.Malformed, "LOGIN without both a username and a password")
 		return bad("LOGIN requires username and password")
 	}
 	return s.finishAuth(args[0].s, args[1].s)
 }
 
 func (s *session) authenticate(args []token) result {
-	if r := s.authAllowed(); r.status != "" {
+	if r := s.authAllowed(""); r.status != "" {
 		return r
 	}
 	if len(args) < 1 || !strings.EqualFold(args[0].s, "PLAIN") {
+		mech := ""
+		if len(args) > 0 {
+			mech = args[0].s
+		}
+		s.audit("", audit.Unsupported, "asked for AUTHENTICATE "+sanitize(mech, 40)+"; only PLAIN and LOGIN are offered")
 		return no("[CANNOT] only PLAIN is supported")
 	}
 	var resp string
@@ -410,6 +481,7 @@ func (s *session) authenticate(args []token) result {
 		resp = string(line)
 	}
 	if resp == "*" {
+		s.audit("", audit.Malformed, "the app cancelled AUTHENTICATE PLAIN")
 		return bad("authentication cancelled")
 	}
 	if resp == "=" {
@@ -417,11 +489,17 @@ func (s *session) authenticate(args []token) result {
 	}
 	dec, err := base64.StdEncoding.DecodeString(resp)
 	if err != nil {
+		s.audit("", audit.Malformed, "AUTHENTICATE PLAIN response isn't base64")
 		return bad("invalid base64")
 	}
 	parts := strings.Split(string(dec), "\x00")
 	if len(parts) != 3 || (parts[0] != "" && !strings.EqualFold(parts[0], parts[1])) {
 		s.srv.Limiter.Fail(s.ip)
+		user := ""
+		if len(parts) == 3 {
+			user = parts[1]
+		}
+		s.audit(user, audit.Malformed, "AUTHENTICATE PLAIN credentials aren't in the expected form")
 		return no("[AUTHENTICATIONFAILED] invalid credentials")
 	}
 	return s.finishAuth(parts[1], parts[2])
@@ -430,8 +508,15 @@ func (s *session) authenticate(args []token) result {
 func (s *session) finishAuth(user, pass string) result {
 	email, okAuth := s.srv.Users.Authenticate(user, pass)
 	if !okAuth {
-		s.srv.Limiter.Fail(s.ip)
-		s.srv.Log.Printf("imap: failed login for %q from %s", user, s.ip)
+		res, detail := audit.BadPassword, "wrong password"
+		if !s.srv.Users.Exists(user) {
+			res, detail = audit.UnknownUser, "no account with this username; use the full email address"
+		}
+		if s.srv.Limiter.Fail(s.ip) {
+			detail += "; this address is now blocked for 15 minutes"
+		}
+		s.audit(user, res, detail)
+		s.srv.Log.Printf("imap: failed login for %q from %s (%s)", user, s.ip, detail)
 		return no("[AUTHENTICATIONFAILED] invalid credentials")
 	}
 	acct, err := s.srv.Store.Account(email)
@@ -440,6 +525,7 @@ func (s *session) finishAuth(user, pass string) result {
 	}
 	s.user, s.acct = email, acct
 	s.watch, s.unwatch = acct.Watch()
+	s.audit(email, audit.OK, "")
 	return ok(fmt.Sprintf("[CAPABILITY %s] logged in", s.caps()))
 }
 

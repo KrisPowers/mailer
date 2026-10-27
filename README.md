@@ -80,16 +80,36 @@ Funnel, IMAP reachability, Email Sending) and your client settings. The other pa
 | **Accounts** | Create accounts, see per-account mail counts and sizes, reset passwords, delete accounts |
 | **Aliases** | Extra addresses and a catch-all per domain |
 | **Outbound queue** | Messages waiting to send; retry them |
+| **Sign-ins** | Every sign-in attempt by a mail app, why it failed, addresses blocked for too many failures, and a test sign-in |
 | **Logs** | Recent server activity |
 | **Settings** | DMARC strictness, saving sent copies, max message size, re-running Cloudflare setup |
 
 `compose.yaml` publishes the dashboard on 127.0.0.1 only, so it can only be reached
 from the computer running Docker.
 
+## When a mail app can't sign in
+
+Open **Sign-ins**. Every IMAP and SMTP sign-in attempt is listed with the app's name,
+the address it came from (the real one, passed through by Funnel), the account it
+tried and the result: wrong password, no such account (the username must be the full
+email address), blocked, not encrypted, a sign-in method that isn't offered, or an app
+that connected and left without trying, with the commands it sent first.
+
+- **Nothing listed** when the app fails: it never reached the server. Check the
+  server name and ports it uses against the dashboard's client settings.
+- **Blocked**: five failures in 15 minutes block that address. Outlook and Gmail sign
+  in from their own servers, so one wrong password saved in the app can block it;
+  fix the password, then **Unblock**.
+- **Test sign-in** checks an account's password and then signs in to IMAP and SMTP
+  through the public Funnel address, step by step.
+
+Gmail on the web no longer checks other mail accounts (Google ended that in 2026);
+use the Gmail app's **Add account → Other** instead.
+
 ## Data
 
-Mail, accounts, keys, settings and Tailscale's state live in the container's `/data`,
-which `compose.yaml` maps to `%LOCALAPPDATA%\mailer\data` on Windows and
+Mail, accounts, keys, settings, the sign-in record (`signins.log`) and Tailscale's
+state live in the container's `/data`, which `compose.yaml` maps to `%LOCALAPPDATA%\mailer\data` on Windows and
 `./mailer/data` elsewhere. Back that folder up.
 
 ## Limits

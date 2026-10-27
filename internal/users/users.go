@@ -244,10 +244,33 @@ func (l *Limiter) Blocked(ip string) bool {
 	return len(l.prune(ip)) >= maxFailures
 }
 
-func (l *Limiter) Fail(ip string) {
+// Fail records a failed attempt from ip and reports whether ip is now
+// blocked because of it.
+func (l *Limiter) Fail(ip string) (nowBlocked bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.failures[ip] = append(l.prune(ip), time.Now())
+	return len(l.failures[ip]) == maxFailures
+}
+
+// BlockedIPs returns each blocked address with when it's let in again.
+func (l *Limiter) BlockedIPs() map[string]time.Time {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := map[string]time.Time{}
+	for ip := range l.failures {
+		if ts := l.prune(ip); len(ts) >= maxFailures {
+			out[ip] = ts[len(ts)-maxFailures].Add(failureWindow)
+		}
+	}
+	return out
+}
+
+// Unblock forgets ip's failures.
+func (l *Limiter) Unblock(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	delete(l.failures, ip)
 }
 
 func (l *Limiter) prune(ip string) []time.Time {

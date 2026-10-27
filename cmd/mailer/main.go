@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"mailer/internal/admin"
+	"mailer/internal/audit"
 	"mailer/internal/cloudflare"
 	"mailer/internal/config"
 	"mailer/internal/imap"
@@ -95,6 +96,7 @@ func serve(dataDir, listenHost string) error {
 	dkim := &dkimKeys{dir: filepath.Join(dataDir, "dkim"), cfg: cfgm, keys: map[string]*mailauth.Signer{}}
 	st := store.New(filepath.Join(dataDir, "mail"))
 	limiter := users.NewLimiter()
+	signIns := audit.Open(filepath.Join(dataDir, "signins.log"))
 	resolver := net.DefaultResolver
 	hostname := func() string { return cfgm.Get().Hostname }
 
@@ -108,12 +110,12 @@ func serve(dataDir, listenHost string) error {
 
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}
 	adm := &admin.Server{Cfg: cfgm, Users: db, Store: st, Queue: q, MTA: m, Setup: setup,
-		Tunnel: runner, Logs: logs, Log: logger}
+		Tunnel: runner, Logs: logs, Log: logger, Audit: signIns, Limiter: limiter}
 
 	sub := &smtp.Server{Hostname: hostname, Mode: smtp.ModeSubmission, Users: db, Limiter: limiter,
-		MaxSize: maxClientMessage, Backend: mta.Submission{MTA: m}, Log: logger}
+		MaxSize: maxClientMessage, Backend: mta.Submission{MTA: m}, Log: logger, Audit: signIns}
 	im := &imap.Server{Hostname: hostname, Users: db, Store: st, Limiter: limiter,
-		MaxMessage: maxClientMessage, Log: logger}
+		MaxMessage: maxClientMessage, Log: logger, Audit: signIns}
 
 	// Mail ports listen on loopback only: the internet reaches them through
 	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients),

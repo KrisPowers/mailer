@@ -14,11 +14,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"mailer/internal/audit"
 	"mailer/internal/config"
 	"mailer/internal/imap"
 	"mailer/internal/mailauth"
@@ -212,9 +214,11 @@ func TestEndToEnd(t *testing.T) {
 
 	inbound := httptest.NewServer(m.InboundHandler())
 	defer inbound.Close()
+	signIns := audit.Open(filepath.Join(dir, "signins.log"))
 	sub := &smtp.Server{Hostname: hostname, Mode: smtp.ModeSubmission, Users: db, Limiter: lim,
-		MaxSize: 10 << 20, Backend: mta.Submission{MTA: m}, Log: logger}
-	im := &imap.Server{Hostname: hostname, Users: db, Store: st, Limiter: lim, MaxMessage: 10 << 20, Log: logger}
+		MaxSize: 10 << 20, Backend: mta.Submission{MTA: m}, Log: logger, Audit: signIns}
+	im := &imap.Server{Hostname: hostname, Users: db, Store: st, Limiter: lim, MaxMessage: 10 << 20, Log: logger,
+		Audit: signIns}
 	subAddr, imapAddr := listen(t, sub.Serve, true), listen(t, im.Serve, true)
 
 	// post mimics the Cloudflare Email Worker.
@@ -353,6 +357,19 @@ func TestEndToEnd(t *testing.T) {
 		t.Errorf("outbound DKIM: %+v", res)
 	}
 
+	// Wrong passwords and unknown accounts are refused.
+	wc := dial(t, imapAddr, true)
+	wc.line()
+	wc.send(`w1 ID ("name" "Microsoft Outlook" "version" "16.0")`)
+	wc.line()
+	wc.line()
+	for _, l := range []string{"w2 LOGIN me@example.com wrong-password", "w3 LOGIN nobody@example.com wrong-password"} {
+		wc.send(l)
+		if r := wc.line(); !strings.Contains(r, "AUTHENTICATIONFAILED") {
+			t.Errorf("%s: %q", l, r)
+		}
+	}
+
 	// Failed logins from the real client IP (from the PROXY header) get
 	// rate-limited without locking out other addresses.
 	for i := 0; i < 5; i++ {
@@ -363,5 +380,37 @@ func TestEndToEnd(t *testing.T) {
 	bc.send("z1 LOGIN me@example.com x")
 	if l := bc.line(); !strings.Contains(l, "UNAVAILABLE") {
 		t.Errorf("expected rate limit for 203.0.113.9, got %q", l)
+	}
+	if b := lim.BlockedIPs(); len(b) != 1 || b["203.0.113.9"].IsZero() {
+		t.Errorf("blocked: %v", b)
+	}
+
+	// Every attempt is in the sign-in audit, newest first, with the real
+	// client IP, the app's name and the commands it sent first.
+	var got []string
+	for _, e := range signIns.Recent() {
+		got = append(got, e.Proto+" "+e.Result)
+		if e.IP != "203.0.113.9" {
+			t.Errorf("audit IP %q", e.IP)
+		}
+	}
+	want := []string{"imap blocked", "imap unknown_user", "imap bad_password", "smtp ok", "imap ok"}
+	if !slices.Equal(got, want) {
+		t.Errorf("audit = %q, want %q", got, want)
+	}
+	if e := signIns.Recent(); len(e) == 5 {
+		if e[1].Client != "Microsoft Outlook 16.0" || !slices.Equal(e[1].Commands, []string{"ID", "LOGIN", "LOGIN"}) {
+			t.Errorf("unknown_user event: %+v", e[1])
+		}
+		if e[3].Client != "laptop" || !slices.Equal(e[3].Commands, []string{"EHLO", "MAIL", "AUTH PLAIN"}) {
+			t.Errorf("smtp event: %+v", e[3])
+		}
+		if e[4].User != "me@example.com" || !slices.Equal(e[4].Commands, []string{"AUTHENTICATE PLAIN"}) {
+			t.Errorf("imap event: %+v", e[4])
+		}
+	}
+	lim.Unblock("203.0.113.9")
+	if lim.Blocked("203.0.113.9") {
+		t.Error("unblock didn't")
 	}
 }

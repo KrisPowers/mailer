@@ -1,5 +1,6 @@
 import type {
-  Account, Aliases, Checks, ConnectResult, Credentials, DomainInfo, Overview, QueueItem, Settings, TailscaleResult, Zone,
+  Account, Aliases, Checks, ConnectResult, Credentials, DomainInfo, Overview, QueueItem, Settings, SignIns, Step,
+  TailscaleResult, Zone,
 } from "./types";
 
 // Every request carries X-Mailer: the server refuses state changes without
@@ -37,6 +38,9 @@ export const api = {
   queue: () => call<QueueItem[]>("GET", "/api/queue"),
   retryQueue: () => call<unknown>("POST", "/api/queue/retry"),
   logs: () => call<string[]>("GET", "/api/logs"),
+  signIns: () => call<SignIns>("GET", "/api/signins"),
+  unblock: (ip: string) => call<{ ok: boolean }>("POST", "/api/signins/unblock", { ip }),
+  testSignIn: (email: string, password: string) => call<{ steps: Step[] }>("POST", "/api/signins/test", { email, password }),
   settings: () => call<Settings>("GET", "/api/settings"),
   saveSettings: (s: Settings) => call<Settings>("PUT", "/api/settings", s),
 };
