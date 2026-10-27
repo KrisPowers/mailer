@@ -144,7 +144,6 @@ export interface TailscaleResult {
   dns_name?: string;
   error?: string;
   action_url?: string;
-  install?: boolean;
 }
 
 export interface Credentials {

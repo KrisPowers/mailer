@@ -1,5 +1,6 @@
-// Package tailscale drives the local Tailscale client to publish the IMAP and
-// submission ports through Tailscale Funnel.
+// Package tailscale drives the Tailscale client running beside mailer in
+// the container to publish the IMAP and submission ports through Tailscale
+// Funnel.
 package tailscale
 
 import (
@@ -8,37 +9,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
-
-	"mailer/internal/console"
 )
 
-// find locates the tailscale CLI, including the default install locations
-// that aren't on PATH.
+// find locates the tailscale CLI.
 func find() (string, error) {
-	if p, err := exec.LookPath("tailscale"); err == nil {
-		return p, nil
+	p, err := exec.LookPath("tailscale")
+	if err != nil {
+		return "", errors.New("Tailscale is not installed")
 	}
-	var candidates []string
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = []string{"/Applications/Tailscale.app/Contents/MacOS/Tailscale", "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale"}
-	case "windows":
-		candidates = []string{os.Getenv("ProgramFiles") + `\Tailscale\tailscale.exe`, `C:\Program Files\Tailscale\tailscale.exe`}
-	default:
-		candidates = []string{"/usr/bin/tailscale", "/usr/local/bin/tailscale", "/usr/sbin/tailscale"}
-	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c, nil
-		}
-	}
-	return "", errors.New("Tailscale is not installed")
+	return p, nil
 }
 
 func run(ctx context.Context, args ...string) ([]byte, error) {
@@ -46,7 +29,7 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := console.Hide(exec.CommandContext(ctx, bin, args...))
+	cmd := exec.CommandContext(ctx, bin, args...)
 	var out bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err = cmd.Run()
@@ -131,7 +114,7 @@ func funnelActive(cfgJSON []byte, publicPort, localPort int) bool {
 
 var urlRe = regexp.MustCompile(`https://login\.tailscale\.com/\S+`)
 
-// ActionNeeded means the user must open URL once (e.g. to allow Funnel on
+// ActionNeeded means the user must open URL once (to allow Funnel on
 // their tailnet), after which EnableFunnel should be retried.
 type ActionNeeded struct {
 	URL     string
@@ -145,39 +128,22 @@ func (e *ActionNeeded) Error() string { return e.Message }
 // ports with a PROXY protocol header carrying the client address.
 //
 // The first time, Tailscale asks for Funnel to be allowed on the tailnet:
-// its approval page is opened with open, and EnableFunnel keeps trying
-// until it's approved, for up to five minutes.
-func EnableFunnel(ctx context.Context, imapPort, subPort int, open func(url string)) error {
-	deadline := time.Now().Add(5 * time.Minute)
-	opened := ""
+// EnableFunnel then returns an ActionNeeded with the approval link for the
+// dashboard to show.
+func EnableFunnel(ctx context.Context, imapPort, subPort int) error {
 	for _, f := range []struct{ public, local int }{{443, imapPort}, {8443, subPort}} {
-		for {
-			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			out, err := run(cctx, "funnel", "--bg", "--yes", "--proxy-protocol=2",
-				fmt.Sprintf("--tls-terminated-tcp=%d", f.public), fmt.Sprintf("tcp://127.0.0.1:%d", f.local))
-			cancel()
-			text := strings.TrimSpace(string(out))
-			u := urlRe.FindString(text)
-			if u == "" && err == nil {
-				break
-			}
-			if u == "" {
-				return funnelError(text, err)
-			}
-			// Waiting for approval: the CLI either exits after printing the
-			// link or blocks until approved (and is stopped at 30s).
-			if u != opened && open != nil {
-				open(u)
-				opened = u
-			}
-			if time.Now().After(deadline) {
-				return &ActionNeeded{URL: u, Message: "Allow Funnel for this machine in Tailscale, then click Enable again"}
-			}
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(3 * time.Second):
-			}
+		// Waiting for approval, the CLI either exits after printing the
+		// link or blocks until approved, so it's stopped after 20s.
+		cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		out, err := run(cctx, "funnel", "--bg", "--yes", "--proxy-protocol=2",
+			fmt.Sprintf("--tls-terminated-tcp=%d", f.public), fmt.Sprintf("tcp://127.0.0.1:%d", f.local))
+		cancel()
+		text := strings.TrimSpace(string(out))
+		if u := urlRe.FindString(text); u != "" {
+			return &ActionNeeded{URL: u, Message: "Allow Funnel for this machine in Tailscale, then click Enable again"}
+		}
+		if err != nil {
+			return funnelError(text, err)
 		}
 	}
 	return nil
@@ -186,18 +152,9 @@ func EnableFunnel(ctx context.Context, imapPort, subPort int, open func(url stri
 func funnelError(text string, err error) error {
 	switch {
 	case strings.Contains(text, "flag provided but not defined"):
-		return errors.New("Tailscale on this computer is too old for Funnel's TCP forwarding; update it from tailscale.com/download, then click Enable again")
-	case runtime.GOOS != "windows" && (strings.Contains(text, "Access denied") || strings.Contains(text, "permission")):
-		return fmt.Errorf("%s. Run once as admin: tailscale set --operator=%s", text, currentUser())
+		return errors.New("this Tailscale is too old for Funnel's TCP forwarding; rebuild the container to update it")
 	case text == "":
 		return err
 	}
 	return errors.New(text)
-}
-
-func currentUser() string {
-	if u := os.Getenv("USER"); u != "" {
-		return u
-	}
-	return os.Getenv("USERNAME")
 }

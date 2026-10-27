@@ -99,7 +99,8 @@ export function Settings() {
       </Panel>
       <Panel title="Admin access" icon="info">
         <div className="panel-body muted">
-          This page only listens on <code>{location.host}</code> and can't be reached from other devices.
+          The container publishes this page on <code>{location.host}</code>, on this computer's loopback only, so other
+          devices can't reach it.
         </div>
       </Panel>
     </>

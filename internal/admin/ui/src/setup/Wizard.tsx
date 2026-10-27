@@ -83,14 +83,35 @@ function CloudflareStep({ ov, advance }: StepProps) {
   const [zone, setZone] = useState("");
   const [status, setStatus] = useState<ReactNode>(null);
 
+  // signIn opens Cloudflare's sign-in in a new tab and waits for the setup
+  // that runs once it's approved. The tab is opened before the request, while
+  // the click still allows it, and pointed at Cloudflare when the address
+  // arrives.
+  const signIn = async (): Promise<ConnectResult> => {
+    const tab = window.open("", "_blank");
+    const start = await api.signInCloudflare().catch((err) => { tab?.close(); throw err; });
+    if (!start.url) {
+      tab?.close();
+      return start;
+    }
+    if (tab) {
+      tab.opener = null;
+      tab.location.href = start.url;
+    }
+    setStatus(<p className="muted">
+      Approve Mailer in the Cloudflare tab{tab ? " that opened" : ""} (<a href={start.url} target="_blank" rel="noopener">open it
+      again</a>). Setup continues here by itself.
+    </p>);
+    return api.signInCloudflareWait();
+  };
+
   // One click signs in to Cloudflare in the browser and runs the whole
   // setup; only an account with several domains asks which one first.
   const run = async () => {
-    setStatus(<p className="muted">{zones ? "Setting up " + zone + ". This can take a minute."
-      : "Approve Mailer in the browser window that opened. Setup continues here by itself."}</p>);
+    setStatus(zones ? <p className="muted">Setting up {zone}. This can take a minute.</p> : null);
     let r: ConnectResult;
     try {
-      r = await (zones ? api.connectCloudflare("", zone) : api.signInCloudflare());
+      r = await (zones ? api.connectCloudflare("", zone) : signIn());
     } catch (err) {
       setStatus(null);
       throw err;
@@ -112,7 +133,7 @@ function CloudflareStep({ ov, advance }: StepProps) {
     <Frame ov={ov} current={1} action={
       <AsyncButton className="btn primary" onClick={run}>{zones ? "Use this domain" : "Connect Cloudflare"}</AsyncButton>
     }>
-      <p>Cloudflare receives mail for your domain and hands it to this computer. Connect your Cloudflare account and Mailer sets up the rest.</p>
+      <p>Cloudflare receives mail for your domain and hands it to this server, and sends your replies. Connect your Cloudflare account and Mailer sets up the rest.</p>
       {zones && (
         <div className="field">
           <label htmlFor="cf-zone">Which domain first?</label>
@@ -125,7 +146,7 @@ function CloudflareStep({ ov, advance }: StepProps) {
       {status}
       <p className="muted small">
         Cloudflare's sign-in page names the app "cf": Cloudflare's own command-line tool, which Mailer signs in through.
-        Your domain has to be on Cloudflare already.
+        Your domain has to be on Cloudflare already, and sending needs the Workers Paid plan on that account.
       </p>
     </Frame>
   );
@@ -148,10 +169,10 @@ function TailscaleStep({ ov, advance }: StepProps) {
       <div>
         <p>Tailscale Funnel lets Outlook and the Gmail app reach this server securely, with nothing opened on your router.</p>
         <ol className="perm-list">
-          <li>Install Tailscale on this machine and sign in <a href="https://tailscale.com/download" target="_blank" rel="noopener">(download)</a>.</li>
-          <li>Click Enable. The first time, Tailscale opens in your browser to allow Funnel: approve it there and setup continues by itself.</li>
+          <li>Click Enable. The first time, sign in to Tailscale with the link shown to add this server to your tailnet.</li>
+          <li>Click Enable again. Tailscale then asks once to allow Funnel: approve it and click Enable a last time.</li>
         </ol>
-        {busy && <p className="muted">Enabling Funnel. If Tailscale opened in your browser, approve it there.</p>}
+        {busy && <p className="muted">Enabling Funnel.</p>}
         {r?.ok && <p><Icon name="check" /> Enabled: <code>{r.dns_name}</code></p>}
         {r && !r.ok && (
           <div className="note">
@@ -160,7 +181,7 @@ function TailscaleStep({ ov, advance }: StepProps) {
               <div>{r.error || "Couldn't enable Funnel."}</div>
               {r.action_url && <>
                 <a href={r.action_url} target="_blank" rel="noopener">Open Tailscale <Icon name="external" /></a>
-                <div className="muted">After approving, click Enable again.</div>
+                <div className="muted">After signing in or approving, click Enable again.</div>
               </>}
             </div>
           </div>

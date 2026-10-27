@@ -58,14 +58,11 @@ export function CloudflarePopover() {
 }
 
 export function TailscalePopover() {
-  const { ov } = useOverview();
   const { close } = useFloating();
   const enable = useEnableTailscale();
-  const ts = ov?.checks?.tailscale;
   return (
-    <AreaPopover area="tailscale" icon="globe" title="Tailscale: mail apps" foot={!ts?.installed
-      ? <a className="btn sm primary" href="https://tailscale.com/download" target="_blank" rel="noopener"><Icon name="external" />Download Tailscale</a>
-      : <button className="btn sm primary" onClick={() => { close(); enable(); }}><Icon name="refresh" />Enable Funnel</button>} />
+    <AreaPopover area="tailscale" icon="globe" title="Tailscale: mail apps" foot={
+      <button className="btn sm primary" onClick={() => { close(); enable(); }}><Icon name="refresh" />Enable Funnel</button>} />
   );
 }
 
