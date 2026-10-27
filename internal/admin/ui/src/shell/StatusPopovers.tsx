@@ -4,7 +4,7 @@ import { useFloating } from "../components/Floating";
 import { Icon } from "../components/Icon";
 import { useModal } from "../components/Modal";
 import { fmtTime, timeAgo } from "../format";
-import { port25, statusOf, useOverview } from "../overview";
+import { domainOK, port25, statusOf, useOverview } from "../overview";
 import { ClientSettings } from "../setup/ClientSettings";
 import { RepairCloudflare } from "../setup/RepairCloudflare";
 import { useEnableTailscale } from "../setup/tailscale";
@@ -26,18 +26,20 @@ export function CloudflarePopover() {
       <div className="pop-head"><Icon name="cloud" />Cloudflare<Badge kind={k}>{cf?.connected ? healthText[k] : "Not connected"}</Badge></div>
       <div className="pop-body">
         {cf?.connected ? <>
-          <Line label="Domain">{cf.domain}</Line>
+          <Line label="Primary domain">{cf.domain}</Line>
           <Line label="Tunnel">{cf.tunnel_status || "—"} · {cf.tunnel_connections || 0} conn</Line>
           <Line label="Connector (cloudflared)">{tun?.running ? "running" : tun?.last_error || "not running"}</Line>
-          <Line label="Email Routing">{cf.email_routing || "—"}</Line>
-          <Line label="Catch-all → Worker">{cf.catch_all_ok ? "yes" : "no"}</Line>
+          <Line label="Domains healthy">{cf.domains.filter(domainOK).length} of {cf.domains.length}</Line>
           <Line label="Inbound path">{cf.public_healthy ? "reachable" : "unreachable"}</Line>
           <Line label="Connected">{fmtTime(ov?.connected_at)}</Line>
         </> : <p className="muted">Cloudflare receives your mail and passes it to this server through a tunnel.</p>}
       </div>
       <div className="pop-foot">
         {cf?.connected
-          ? <button className="btn sm" onClick={() => { close(); open(<RepairCloudflare />); }}><Icon name="refresh" />Repair</button>
+          ? <>
+            <a className="btn sm" href="#domains" onClick={close}>Domains</a>
+            <button className="btn sm" onClick={() => { close(); open(<RepairCloudflare domains={ov?.domains ?? []} />); }}><Icon name="refresh" />Repair</button>
+          </>
           : <button className="btn sm primary" onClick={() => { close(); open(<Wizard />); }}>Set up</button>}
       </div>
     </>

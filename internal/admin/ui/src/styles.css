@@ -222,6 +222,7 @@ td.wrap { white-space: normal; }
 .badge.bad { background: var(--bad-soft); color: var(--bad); border-color: transparent; }
 .badge.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
 .badge.plain::before { display: none; }
+.badges { display: flex; gap: 4px; flex-wrap: wrap; }
 
 /* status list */
 .status-table td:first-child { width: 36px; padding-right: 0; color: var(--muted); }

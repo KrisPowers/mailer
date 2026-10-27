@@ -12,14 +12,21 @@ export interface Check {
   detail: string;
 }
 
+export interface DomainStatus {
+  name: string;
+  primary: boolean;
+  account_id: string;
+  checks: Step[];
+  error?: string;
+}
+
 export interface CloudflareStatus {
   connected: boolean;
   domain: string;
   tunnel_status: string;
   tunnel_connections: number;
-  email_routing: string;
-  catch_all_ok: boolean;
   public_healthy: boolean;
+  domains: DomainStatus[];
   error?: string;
 }
 
@@ -58,6 +65,7 @@ export interface ClientSettings {
 
 export interface Overview {
   domain: string;
+  domains: string[] | null;
   hostname: string;
   cloudflare_setup: boolean;
   tailscale_setup: boolean;
@@ -101,6 +109,20 @@ export interface QueueItem {
   created: string;
   next_try: string;
   attempts: number;
+}
+
+export interface DomainInfo {
+  name: string;
+  primary: boolean;
+  account_id: string;
+  connected_at: string;
+  accounts: number;
+  status: DomainStatus | null;
+}
+
+export interface Zone {
+  name: string;
+  connected: boolean;
 }
 
 export interface Settings {

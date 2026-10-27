@@ -7,7 +7,7 @@ import { PageHead, Panel } from "../components/Layout";
 import { useModal } from "../components/Modal";
 import { Switch } from "../components/Switch";
 import { useToast } from "../components/Toasts";
-import { fmtTime } from "../format";
+import { fmtTime, plural } from "../format";
 import { statusOf, useOverview } from "../overview";
 import { RepairCloudflare } from "../setup/RepairCloudflare";
 import { useEnableTailscale } from "../setup/tailscale";
@@ -81,9 +81,9 @@ export function Settings() {
           <table>
             <tbody>
               <ConnRow icon="cloud" name="Cloudflare" kind={st.cf}
-                detail={cf?.connected ? `${cf.domain} · connected ${fmtTime(ov?.connected_at)}` : "Not connected"}>
+                detail={cf?.connected ? `${plural(ov?.domains?.length ?? 0, "domain", "domains")} · connected ${fmtTime(ov?.connected_at)}` : "Not connected"}>
                 <MoreMenu items={() => cf?.connected ? [
-                  { label: "Repair setup", icon: "refresh", onClick: () => open(<RepairCloudflare />) },
+                  { label: "Repair setup", icon: "refresh", onClick: () => open(<RepairCloudflare domains={ov?.domains ?? []} />) },
                   { label: "Use a different token", icon: "key", onClick: () => open(<Wizard step={1} />) },
                 ] : [{ label: "Set up", icon: "plus", onClick: () => open(<Wizard step={1} />) }]} />
               </ConnRow>
