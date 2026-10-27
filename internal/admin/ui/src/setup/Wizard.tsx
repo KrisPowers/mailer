@@ -10,15 +10,25 @@ import { PasswordModal } from "./PasswordModal";
 import { Progress } from "./Progress";
 import { useEnableTailscale } from "./tailscale";
 
-const PERMISSIONS = [
-  "Account · Cloudflare Tunnel · Edit",
-  "Account · Workers Scripts · Edit",
-  "Zone · Zone · Read",
-  "Zone · Zone Settings · Edit",
-  "Zone · DNS · Edit",
-  "Zone · Email Routing Rules · Edit",
-  "Email Sending · Edit (only to send through Cloudflare)",
+// Cloudflare's token page opens with these permissions already filled in:
+// tunnel, Email Worker, Email Routing and Email Sending, and the zone and
+// DNS access to publish records, on every account and domain.
+const TOKEN_PERMISSIONS = [
+  { key: "argotunnel", type: "edit" },
+  { key: "workers_scripts", type: "edit" },
+  { key: "email_sending", type: "edit" },
+  { key: "zone", type: "read" },
+  { key: "zone_settings", type: "edit" },
+  { key: "dns", type: "edit" },
+  { key: "email_routing_rule", type: "edit" },
 ];
+
+const TOKEN_PAGE = "https://dash.cloudflare.com/profile/api-tokens?" + new URLSearchParams({
+  permissionGroupKeys: JSON.stringify(TOKEN_PERMISSIONS),
+  accountId: "*",
+  zoneId: "all",
+  name: "Mailer",
+});
 
 type StepNum = 1 | 2 | 3;
 
@@ -91,11 +101,10 @@ function CloudflareStep({ ov, advance }: StepProps) {
   const [token, setToken] = useState("");
   const [zones, setZones] = useState<string[] | null>(null);
   const [zone, setZone] = useState("");
-  const [showPerms, setShowPerms] = useState(false);
   const [status, setStatus] = useState<ReactNode>(null);
 
   const run = async () => {
-    setStatus(<p className="muted">Configuring Cloudflare… this can take a minute.</p>);
+    setStatus(<p className="muted">Setting up Cloudflare. This can take a minute.</p>);
     let r: ConnectResult;
     try {
       r = await api.connectCloudflare(token.trim(), zones ? zone : "");
@@ -106,7 +115,7 @@ function CloudflareStep({ ov, advance }: StepProps) {
     if (r.choose_zone) {
       setZones(r.choose_zone);
       setZone(r.choose_zone[0] ?? "");
-      setStatus(<p>This token can see several domains. Choose one and click Connect again.</p>);
+      setStatus(null);
       return;
     }
     setStatus(<Progress steps={r.steps} error={r.error} />);
@@ -118,31 +127,35 @@ function CloudflareStep({ ov, advance }: StepProps) {
 
   return (
     <Frame ov={ov} current={1} action={<AsyncButton className="btn primary" onClick={run}>Connect</AsyncButton>}>
-      <div>
-        <p>Cloudflare receives mail for your domains and passes it to this server through a tunnel. One token sets up everything; add more domains later on the Domains page.</p>
-        <div className="field">
-          <label htmlFor="cf-token">API token</label>
-          <input id="cf-token" type="password" placeholder="Paste Cloudflare API token" autoComplete="off" spellCheck={false}
-            value={token} onChange={(e) => setToken(e.target.value)} autoFocus />
-          <div className="hint">
-            <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">Create a custom token</a>
-            {" · "}
-            <button className="info-btn" onClick={() => setShowPerms(!showPerms)}><Icon name="info" />Required permissions</button>
-            {showPerms && <ul className="perm-list">
-              {PERMISSIONS.map((p) => <li key={p}>{p}</li>)}
-              <li>Zone Resources: every domain you'll manage here, or All zones</li>
-            </ul>}
-          </div>
-        </div>
+      <p>Cloudflare receives mail for your domain and hands it to this computer. Mailer sets that up for you with a Cloudflare API token.</p>
+      <ol className="guide">
+        <li>
+          <b>Open Cloudflare's token page</b>
+          <span className="muted">Sign in if asked. Everything Mailer needs is already filled in.</span>
+          <a className="btn sm" href={TOKEN_PAGE} target="_blank" rel="noopener"><Icon name="external" />Open token page</a>
+        </li>
+        <li>
+          <b>Create the token</b>
+          <span className="muted">Change nothing. Scroll to the bottom, click <b>Continue to summary</b>, then <b>Create Token</b>.</span>
+        </li>
+        <li>
+          <b>Paste it here</b>
+          <span className="muted">Click <b>Copy</b> next to the token. Cloudflare shows it only once.</span>
+          <input type="password" placeholder="Paste the token" autoComplete="off" spellCheck={false}
+            aria-label="Cloudflare API token" value={token} onChange={(e) => setToken(e.target.value)} />
+        </li>
         {zones && (
-          <div className="field">
-            <select value={zone} onChange={(e) => setZone(e.target.value)}>
+          <li>
+            <b>Choose your domain</b>
+            <span className="muted">The token can see several. Add the others later on the Domains page.</span>
+            <select aria-label="Domain" value={zone} onChange={(e) => setZone(e.target.value)}>
               {zones.map((z) => <option key={z} value={z}>{z}</option>)}
             </select>
-          </div>
+          </li>
         )}
-        {status}
-      </div>
+      </ol>
+      <p className="muted small">Your domain has to be on Cloudflare already, using Cloudflare's nameservers.</p>
+      {status}
     </Frame>
   );
 }
