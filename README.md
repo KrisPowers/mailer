@@ -11,6 +11,14 @@ Your replies ◀── mailer sends directly, DKIM-signed
 
 ## Setup
 
+On Windows, right-click **`start.ps1` → Run with PowerShell** to start or update
+everything: it installs Git, Go, Node.js and Tailscale if missing, pulls the latest
+code, rebuilds the UI and server, installs it to `%ProgramData%\mailer` as a boot
+task, re-applies Cloudflare and Tailscale Funnel, and prints the status checks. Run
+it again after every update. On a first run, finish setup on the admin page it opens.
+
+Elsewhere, or by hand:
+
 1. **Build:** `go build -o mailer ./cmd/mailer`. Build for another OS with, for example,
    `GOOS=windows GOARCH=amd64 go build -o mailer.exe ./cmd/mailer`.
 2. **Install [Tailscale](https://tailscale.com/download)** on the server and sign in.
@@ -67,7 +75,8 @@ The admin page only listens on 127.0.0.1, so it can only be reached from the ser
 ## Data
 
 Everything lives in `mailer-data/` next to the binary: mail, accounts, keys, and
-settings. Back that folder up. Use `-data DIR` to put it somewhere else.
+settings. Back that folder up. Use `-data DIR` to put it somewhere else. `start.ps1`
+uses `%ProgramData%\mailer\data`.
 
 ## Limits
 
