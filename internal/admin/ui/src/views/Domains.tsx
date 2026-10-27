@@ -156,13 +156,9 @@ function AddDomain({ onAdded }: { onAdded: () => Promise<void> }) {
       {zones.error ? <p className="muted">{zones.error}</p>
         : !zones.data ? <p className="muted">Loading the domains your Cloudflare token can see…</p>
         : !free.length ? <>
-          <p>Every domain this token can see is already connected.</p>
-          <p className="muted">
-            To add another, give the token access to it under Zone Resources
-            {" "}(<a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" rel="noopener">API tokens</a>),
-            or use a different token.
-          </p>
-          <button className="btn sm" onClick={() => open(<Wizard step={1} />)}><Icon name="key" />Use a different token</button>
+          <p>Every domain on your Cloudflare account is already connected.</p>
+          <p className="muted">To add another, add it to Cloudflare first, or sign in with the account that has it.</p>
+          <button className="btn sm" onClick={() => open(<Wizard step={1} />)}><Icon name="key" />Sign in again</button>
         </> : <>
           <p>Cloudflare will receive mail for the domain and pass it to this server, and the DKIM, DMARC and SPF records are published.</p>
           <div className="field">

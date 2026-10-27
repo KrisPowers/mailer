@@ -89,7 +89,7 @@ export function Settings() {
                 detail={cf?.connected ? `${plural(ov?.domains?.length ?? 0, "domain", "domains")} · connected ${fmtTime(ov?.connected_at)}` : "Not connected"}>
                 <MoreMenu items={() => cf?.connected ? [
                   { label: "Repair setup", icon: "refresh", onClick: () => open(<RepairCloudflare domains={ov?.domains ?? []} />) },
-                  { label: "Use a different token", icon: "key", onClick: () => open(<Wizard step={1} />) },
+                  { label: "Sign in again", icon: "key", onClick: () => open(<Wizard step={1} />) },
                 ] : [{ label: "Set up", icon: "plus", onClick: () => open(<Wizard step={1} />) }]} />
               </ConnRow>
               <ConnRow icon="globe" name="Tailscale Funnel" kind={st.ts}

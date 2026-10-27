@@ -303,15 +303,6 @@ dialog::backdrop { background: rgba(15, 20, 30, .45); }
 .progress li.err { color: var(--bad); }
 .progress li .d { color: var(--muted); margin-left: auto; }
 .perm-list { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
-.guide { list-style: none; counter-reset: guide; margin: 14px 0; padding: 0; display: grid; gap: 16px; }
-.guide > li { counter-increment: guide; display: grid; grid-template-columns: 22px 1fr; column-gap: 12px; row-gap: 6px; align-items: start; }
-.guide > li::before {
-  content: counter(guide); grid-row: span 3; width: 22px; height: 22px; border-radius: 50%;
-  background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-size: 12px; font-weight: 600;
-}
-.guide > li > b { font-weight: 600; }
-.guide > li > .btn { justify-self: start; }
-.guide > li > input, .guide > li > select { width: 100%; }
 
 /* logs */
 .logbox {

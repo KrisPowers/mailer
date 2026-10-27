@@ -10,26 +10,6 @@ import { PasswordModal } from "./PasswordModal";
 import { Progress } from "./Progress";
 import { useEnableTailscale } from "./tailscale";
 
-// Cloudflare's token page opens with these permissions already filled in:
-// tunnel, Email Worker, Email Routing and Email Sending, and the zone and
-// DNS access to publish records, on every account and domain.
-const TOKEN_PERMISSIONS = [
-  { key: "argotunnel", type: "edit" },
-  { key: "workers_scripts", type: "edit" },
-  { key: "email_sending", type: "edit" },
-  { key: "zone", type: "read" },
-  { key: "zone_settings", type: "edit" },
-  { key: "dns", type: "edit" },
-  { key: "email_routing_rule", type: "edit" },
-];
-
-const TOKEN_PAGE = "https://dash.cloudflare.com/profile/api-tokens?" + new URLSearchParams({
-  permissionGroupKeys: JSON.stringify(TOKEN_PERMISSIONS),
-  accountId: "*",
-  zoneId: "all",
-  name: "Mailer",
-});
-
 type StepNum = 1 | 2 | 3;
 
 // Wizard walks through the three one-time setup steps. It opens on the
@@ -98,16 +78,18 @@ interface StepProps {
 
 function CloudflareStep({ ov, advance }: StepProps) {
   const toast = useToast();
-  const [token, setToken] = useState("");
   const [zones, setZones] = useState<string[] | null>(null);
   const [zone, setZone] = useState("");
   const [status, setStatus] = useState<ReactNode>(null);
 
+  // One click signs in to Cloudflare in the browser and runs the whole
+  // setup; only an account with several domains asks which one first.
   const run = async () => {
-    setStatus(<p className="muted">Setting up Cloudflare. This can take a minute.</p>);
+    setStatus(<p className="muted">{zones ? "Setting up " + zone + ". This can take a minute."
+      : "Approve Mailer in the browser window that opened. Setup continues here by itself."}</p>);
     let r: ConnectResult;
     try {
-      r = await api.connectCloudflare(token.trim(), zones ? zone : "");
+      r = await (zones ? api.connectCloudflare("", zone) : api.signInCloudflare());
     } catch (err) {
       setStatus(null);
       throw err;
@@ -126,36 +108,24 @@ function CloudflareStep({ ov, advance }: StepProps) {
   };
 
   return (
-    <Frame ov={ov} current={1} action={<AsyncButton className="btn primary" onClick={run}>Connect</AsyncButton>}>
-      <p>Cloudflare receives mail for your domain and hands it to this computer. Mailer sets that up for you with a Cloudflare API token.</p>
-      <ol className="guide">
-        <li>
-          <b>Open Cloudflare's token page</b>
-          <span className="muted">Sign in if asked. Everything Mailer needs is already filled in.</span>
-          <a className="btn sm" href={TOKEN_PAGE} target="_blank" rel="noopener"><Icon name="external" />Open token page</a>
-        </li>
-        <li>
-          <b>Create the token</b>
-          <span className="muted">Change nothing. Scroll to the bottom, click <b>Continue to summary</b>, then <b>Create Token</b>.</span>
-        </li>
-        <li>
-          <b>Paste it here</b>
-          <span className="muted">Click <b>Copy</b> next to the token. Cloudflare shows it only once.</span>
-          <input type="password" placeholder="Paste the token" autoComplete="off" spellCheck={false}
-            aria-label="Cloudflare API token" value={token} onChange={(e) => setToken(e.target.value)} />
-        </li>
-        {zones && (
-          <li>
-            <b>Choose your domain</b>
-            <span className="muted">The token can see several. Add the others later on the Domains page.</span>
-            <select aria-label="Domain" value={zone} onChange={(e) => setZone(e.target.value)}>
-              {zones.map((z) => <option key={z} value={z}>{z}</option>)}
-            </select>
-          </li>
-        )}
-      </ol>
-      <p className="muted small">Your domain has to be on Cloudflare already, using Cloudflare's nameservers.</p>
+    <Frame ov={ov} current={1} action={
+      <AsyncButton className="btn primary" onClick={run}>{zones ? "Use this domain" : "Connect Cloudflare"}</AsyncButton>
+    }>
+      <p>Cloudflare receives mail for your domain and hands it to this computer. Connect your Cloudflare account and Mailer sets up the rest.</p>
+      {zones && (
+        <div className="field">
+          <label htmlFor="cf-zone">Which domain first?</label>
+          <select id="cf-zone" value={zone} onChange={(e) => setZone(e.target.value)}>
+            {zones.map((z) => <option key={z} value={z}>{z}</option>)}
+          </select>
+          <div className="hint">Add the others later on the Domains page.</div>
+        </div>
+      )}
       {status}
+      <p className="muted small">
+        Cloudflare's sign-in page names the app "cf": Cloudflare's own command-line tool, which Mailer signs in through.
+        Your domain has to be on Cloudflare already.
+      </p>
     </Frame>
   );
 }
