@@ -30,11 +30,14 @@ type fakeCF struct {
 	catchAll map[string]string // zone ID -> worker, "" when off
 	worker   map[string]any
 	script   string
+	sending  map[string][]SendingDomain // zone ID -> onboarded domains
+	sent     []map[string]any           // send_raw request bodies
 }
 
 func newFake() *fakeCF {
 	f := &fakeCF{zones: map[string]string{"z1": "example.com", "z2": "example.org"},
-		records: map[string]map[string]Record{}, routing: map[string]bool{}, catchAll: map[string]string{}}
+		records: map[string]map[string]Record{}, routing: map[string]bool{}, catchAll: map[string]string{},
+		sending: map[string][]SendingDomain{}}
 	for id := range f.zones {
 		f.records[id] = map[string]Record{}
 	}
@@ -148,6 +151,28 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "email/routing/rules/catch_all" && r.Method == "GET":
 		target := f.catchAll[zone]
 		ok(map[string]any{"enabled": target != "", "actions": []map[string]any{{"type": "worker", "value": []string{target}}}})
+	case rest == "email/sending/subdomains" && r.Method == "GET":
+		ok(append([]SendingDomain{}, f.sending[zone]...))
+	case rest == "email/sending/subdomains" && r.Method == "POST":
+		var body struct{ Name string }
+		json.NewDecoder(r.Body).Decode(&body)
+		sd := SendingDomain{Name: body.Name, Tag: "tag-" + zone, Enabled: true}
+		f.sending[zone] = append(f.sending[zone], sd)
+		ok(sd)
+	case rest == "email/sending/subdomains/tag-"+zone+"/dns":
+		name, ten := f.zones[zone], 10
+		ok([]Record{
+			{Type: "MX", Name: "cf-bounce." + name, Content: "route1.mx.cloudflare.net", Priority: &ten},
+			{Type: "TXT", Name: "cf-bounce." + name, Content: `"v=spf1 include:_spf.mx.cloudflare.net ~all"`},
+			{Type: "TXT", Name: "cf-bounce._domainkey." + name, Content: "v=DKIM1; k=rsa; p=CF"},
+			{Type: "TXT", Name: "_dmarc." + name, Content: "v=DMARC1; p=reject"},
+			{Type: "TXT", Name: name, Content: "v=spf1 include:_spf.mx.cloudflare.net -all"},
+		})
+	case p == "/accounts/a1/email/sending/send_raw":
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		f.sent = append(f.sent, body)
+		ok(map[string]any{"delivered": []string{"ok@other.net"}, "permanent_bounces": []string{"BAD@other.net"}, "queued": []string{}})
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+p, 404)
 	}

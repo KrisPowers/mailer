@@ -32,6 +32,9 @@ type Config struct {
 
 	RejectDMARCFailures bool `json:"reject_dmarc_failures"`
 	SaveSentCopy        bool `json:"save_sent_copy"`
+	// SendViaCloudflare hands outbound mail to Cloudflare Email Sending
+	// instead of delivering it from this machine on port 25.
+	SendViaCloudflare bool `json:"send_via_cloudflare"`
 
 	Cloudflare Cloudflare `json:"cloudflare"`
 	Tailscale  Tailscale  `json:"tailscale"`

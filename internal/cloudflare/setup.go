@@ -160,6 +160,13 @@ func (s *Setup) Connect(ctx context.Context, token, zoneName string) ([]Step, er
 	}
 	done("Publish DKIM / DMARC", "")
 
+	if cfg.SendViaCloudflare {
+		if err := s.onboardSending(ctx, c, zone.ID, domain); err != nil {
+			return fail("Turn on Email Sending", err)
+		}
+		done("Turn on Email Sending", "")
+	}
+
 	ip, err := publicIP(ctx)
 	if err == nil {
 		err = s.syncDomain(ctx, s.Cfg.Get(), domain, ip)
@@ -270,6 +277,89 @@ func (s *Setup) publishAuthRecords(ctx context.Context, c *Client, zoneID, domai
 	}
 	_, err = c.CreateRecord(ctx, zoneID, Record{Type: "TXT", Name: "_dmarc." + domain, Content: defaultDMARC, TTL: 1})
 	return err
+}
+
+// EnableSending onboards every domain for Cloudflare Email Sending.
+func (s *Setup) EnableSending(ctx context.Context) error {
+	cfg := s.Cfg.Get()
+	c := New(cfg.Cloudflare.Token)
+	for _, d := range cfg.Domains {
+		if z, ok := cfg.Cloudflare.Zones[d]; ok {
+			if err := s.onboardSending(ctx, c, z.ID, d); err != nil {
+				return fmt.Errorf("%s: %w", d, err)
+			}
+		}
+	}
+	return nil
+}
+
+// onboardSending turns on Email Sending for domain and publishes the DNS
+// records it asks for.
+func (s *Setup) onboardSending(ctx context.Context, c *Client, zoneID, domain string) error {
+	sds, err := c.SendingDomains(ctx, zoneID)
+	if err != nil {
+		return err
+	}
+	var sd *SendingDomain
+	if i := slices.IndexFunc(sds, func(d SendingDomain) bool { return strings.EqualFold(d.Name, domain) }); i >= 0 {
+		sd = &sds[i]
+	} else if sd, err = c.EnableSending(ctx, zoneID, domain); err != nil {
+		return err
+	}
+	recs, err := c.SendingDNS(ctx, zoneID, sd.Tag)
+	if err != nil {
+		return err
+	}
+	for _, r := range recs {
+		if err := publishSendingRecord(ctx, c, zoneID, domain, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// publishSendingRecord adds a record Email Sending asked for, replacing an
+// older value of the same kind (same name and v= tag). It leaves the
+// domain's own SPF, which SyncDNS maintains, and an existing DMARC policy
+// alone.
+func publishSendingRecord(ctx context.Context, c *Client, zoneID, domain string, r Record) error {
+	r.ID, r.Proxied, r.Content = "", nil, unquote(r.Content)
+	switch {
+	case r.Name == "" || r.Name == "@":
+		r.Name = domain
+	case r.Name != domain && !strings.HasSuffix(r.Name, "."+domain):
+		r.Name += "." + domain
+	}
+	if r.TTL == 0 {
+		r.TTL = 1
+	}
+	existing, err := c.ListRecords(ctx, zoneID, r.Type, r.Name)
+	if err != nil {
+		return err
+	}
+	tag := tagOf(r.Content)
+	for _, old := range existing {
+		if compact(unquote(old.Content)) == compact(r.Content) || tag == "v=dmarc1" && tagOf(unquote(old.Content)) == tag {
+			return nil
+		}
+	}
+	if r.Type != "TXT" || tag == "" {
+		_, err := c.CreateRecord(ctx, zoneID, r)
+		return err
+	}
+	if tag == "v=spf1" && r.Name == domain {
+		return nil
+	}
+	return c.UpsertRecord(ctx, zoneID, r, func(old Record) bool { return tagOf(unquote(old.Content)) == tag })
+}
+
+// tagOf returns a TXT record's lowercased "v=" tag, or "".
+func tagOf(v string) string {
+	f := strings.FieldsFunc(v, func(r rune) bool { return r == ';' || r == ' ' })
+	if len(f) == 0 || !strings.HasPrefix(strings.ToLower(f[0]), "v=") {
+		return ""
+	}
+	return strings.ToLower(f[0])
 }
 
 // SyncDNS publishes this machine's current public IP as the A record for the
@@ -514,6 +604,16 @@ func (s *Setup) checkDomain(ctx context.Context, c *Client, cfg config.Config, d
 			add("DKIM", false, name+" missing")
 		default:
 			add("DKIM", false, name+" doesn't match this server's key")
+		}
+	}
+
+	if cfg.SendViaCloudflare {
+		if sds, err := c.SendingDomains(ctx, z.ID); err != nil {
+			add("Email Sending", false, err.Error())
+		} else if slices.ContainsFunc(sds, func(d SendingDomain) bool { return strings.EqualFold(d.Name, domain) && d.Enabled }) {
+			add("Email Sending", true, "enabled")
+		} else {
+			add("Email Sending", false, "not enabled for "+domain)
 		}
 	}
 
