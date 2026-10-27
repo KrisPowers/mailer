@@ -25,6 +25,7 @@ export const api = {
   zones: () => call<Zone[]>("GET", "/api/cloudflare/zones"),
   domains: () => call<DomainInfo[]>("GET", "/api/domains"),
   removeDomain: (domain: string) => call<{ ok: boolean; warning: string }>("POST", "/api/domains/remove", { domain }),
+  openURL: (url: string) => call<{ ok: boolean }>("POST", "/api/open", { url }),
   enableTailscale: () => call<TailscaleResult>("POST", "/api/tailscale/enable"),
   accounts: () => call<Account[]>("GET", "/api/accounts"),
   createAccount: (email: string) => call<Credentials>("POST", "/api/accounts", { email }),

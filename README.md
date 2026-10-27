@@ -11,28 +11,27 @@ Your replies ◀── mailer sends directly, DKIM-signed
 
 ## Setup
 
-On Windows, right-click **`start.ps1` → Run with PowerShell** to start or update
-everything: it installs Git, Go, Node.js and Tailscale if missing, pulls the latest
-code, rebuilds the UI and server, starts the server in that window, re-applies
-Tailscale Funnel and Cloudflare, and prints the status checks. The server runs until
-you close the window. On a first run, finish setup on the admin page it opens.
+Mailer is a desktop app. Opening it starts the mail server and shows its window,
+where everything is set up and managed.
 
-Elsewhere, or by hand:
-
-1. **Build:** `go build -o mailer ./cmd/mailer`. Build for another OS with, for example,
-   `GOOS=windows GOARCH=amd64 go build -o mailer.exe ./cmd/mailer`.
-2. **Install [Tailscale](https://tailscale.com/download)** on the server and sign in.
-3. **Run `mailer`.** Then open **http://127.0.0.1:8080** on the server and:
-   - paste a Cloudflare API token (the page lists the permissions) → **Connect**
+1. **Build:** `scripts\build.ps1` (needs Go and Node.js) makes `builds\Mailer.exe`.
+2. **Install [Tailscale](https://tailscale.com/download)** and sign in.
+3. **Open `Mailer.exe`** and, in its window:
+   - paste a Cloudflare API token (the window lists the permissions) → **Connect**
    - **Tailscale → Enable**. The first time, Tailscale may show one link to allow Funnel.
    - **Accounts → Create account**
    - more domains: **Domains → Add domain** (the token must be able to see them:
      list each under Zone Resources, or pick All zones)
 
-To start it automatically at boot: `sudo mailer install` (on Windows, run from an
-Administrator terminal).
+The window then shows the server address and ports to enter in Outlook or the Gmail app.
 
-The page then shows the server address and ports to enter in Outlook or the Gmail app.
+Closing the window hides it and mail keeps flowing; opening Mailer again brings it
+back. **Mailer → Quit Mailer** stops the server.
+
+On a machine without a desktop, run `mailer -headless` instead (plain
+`go build -o mailer ./cmd/mailer` builds it) and use the admin page at
+**http://127.0.0.1:8080** on that machine. `sudo mailer install` starts it headless
+at boot.
 
 ## What the setup does for you
 
@@ -56,7 +55,7 @@ instead, which onboards every domain and publishes its records. It needs the Wor
 Paid plan and the token's **Email Sending · Edit** permission. Messages over 5 MB
 still go direct.
 
-## Admin page
+## The app window
 
 The **Overview** page shows the connection checks (tunnel, Email Routing, inbound path,
 Funnel, IMAP reachability, outbound port 25) and your client settings. The other pages:
@@ -70,13 +69,14 @@ Funnel, IMAP reachability, outbound port 25) and your client settings. The other
 | **Logs** | Recent server activity |
 | **Settings** | DMARC strictness, saving sent copies, max message size, re-running Cloudflare setup |
 
-The admin page only listens on 127.0.0.1, so it can only be reached from the server itself.
+The same pages are served on 127.0.0.1 only, so they can only be reached from the
+server itself.
 
 ## Data
 
-Everything lives in `mailer-data/` next to the binary: mail, accounts, keys, and
-settings. Back that folder up. Use `-data DIR` to put it somewhere else. `start.ps1`
-uses `%LOCALAPPDATA%\mailer\data`.
+Mail, accounts, keys, and settings live in `%LOCALAPPDATA%\mailer\data` on Windows
+and in `mailer-data/` next to the binary elsewhere. Back that folder up. Use
+`-data DIR` to put it somewhere else.
 
 ## Limits
 

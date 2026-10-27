@@ -45,6 +45,8 @@ type Server struct {
 	Tunnel *tunnel.Runner
 	Logs   *logbuf.Buffer
 	Log    *log.Logger
+	// OpenURL opens a link in the default browser; the app window can't.
+	OpenURL func(url string)
 
 	mu     sync.Mutex
 	checks *Checks
@@ -73,11 +75,13 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/logs", s.getLogs)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	mux.HandleFunc("POST /api/open", s.openURL)
 	return s.guard(mux)
 }
 
 // guard rejects requests that didn't come from a page on this machine:
-// the Host header must be a loopback name (defeats DNS rebinding), and
+// the Host header must be a loopback name or the app window's in-process
+// origin (defeats DNS rebinding), and
 // state-changing requests must carry a custom header, which other sites
 // can't send cross-origin.
 func (s *Server) guard(next http.Handler) http.Handler {
@@ -86,7 +90,9 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		if err != nil {
 			host = r.Host
 		}
-		if host != "localhost" && host != "127.0.0.1" && host != "::1" && host != "[::1]" {
+		switch host {
+		case "localhost", "127.0.0.1", "::1", "[::1]", "wails.localhost", "wails":
+		default:
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
@@ -651,6 +657,21 @@ func (s *Server) retryQueue(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err)
 		return
 	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+// openURL opens a web link (Cloudflare, Tailscale) in the default browser.
+func (s *Server) openURL(w http.ResponseWriter, r *http.Request) {
+	var req struct{ URL string }
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if !strings.HasPrefix(req.URL, "https://") || s.OpenURL == nil {
+		writeErr(w, 400, errors.New("only https links can be opened"))
+		return
+	}
+	s.OpenURL(req.URL)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
