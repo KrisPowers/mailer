@@ -37,6 +37,17 @@ The page then shows the server address and ports to enter in Outlook or the Gmai
 - Tailscale Funnel: IMAP on port 443 and sending on port 8443, with Tailscale's TLS
   certificate and the real client IP passed through for rate limiting
 
+## Sending
+
+By default replies go straight from this machine to the recipient's mail server on
+port 25, DKIM-signed, with your home IP published in each domain's SPF. Many home
+ISPs block port 25, and some receivers junk mail from home connections. If the
+Overview shows port 25 blocked, turn on **Settings → Send through Cloudflare**: mail
+is handed to [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/)
+instead, which onboards every domain and publishes its records. It needs the Workers
+Paid plan and the token's **Email Sending · Edit** permission. Messages over 5 MB
+still go direct.
+
 ## Admin page
 
 The **Overview** page shows the connection checks (tunnel, Email Routing, inbound path,
