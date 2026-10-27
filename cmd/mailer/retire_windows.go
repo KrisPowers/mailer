@@ -9,8 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"unicode/utf16"
+
+	"mailer/internal/console"
 )
 
 // retireScriptInstalls stops copies of the server started by the old
@@ -100,7 +101,5 @@ func powershell(elevated bool, script string) {
 			"Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList '" +
 				strings.Join([]string{"-NoProfile", "-NonInteractive", "-EncodedCommand", enc}, " ") + "'"}
 	}
-	cmd := exec.Command("powershell", args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
-	cmd.Run()
+	console.Hide(exec.Command("powershell", args...)).Run()
 }

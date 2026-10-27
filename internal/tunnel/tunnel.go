@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"mailer/internal/console"
 	"mailer/internal/users"
 )
 
@@ -98,7 +99,7 @@ func (r *Runner) Run(ctx context.Context, token func() string) {
 }
 
 func (r *Runner) runOnce(ctx context.Context, bin, token string) error {
-	cmd := exec.CommandContext(ctx, bin, "tunnel", "--no-autoupdate", "run")
+	cmd := console.Hide(exec.CommandContext(ctx, bin, "tunnel", "--no-autoupdate", "run"))
 	// Pass the token via the environment so it doesn't show in process lists.
 	cmd.Env = append(os.Environ(), "TUNNEL_TOKEN="+token)
 	out, err := cmd.StderrPipe()
