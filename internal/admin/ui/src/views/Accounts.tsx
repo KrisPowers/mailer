@@ -3,6 +3,7 @@ import { api } from "../api";
 import { AsyncButton } from "../components/AsyncButton";
 import { Badge } from "../components/Badge";
 import { Confirm } from "../components/Confirm";
+import { CopyButton } from "../components/CopyButton";
 import { DomainField } from "../components/DomainField";
 import { PasswordField } from "../components/PasswordField";
 import { MoreMenu, type MenuItem } from "../components/Floating";
@@ -65,13 +66,13 @@ export function Accounts() {
             <thead>
               <tr>
                 <th>Account</th><th>Aliases</th><th className="num">Messages</th>
-                <th className="num">Unread</th><th className="num">Size</th><th />
+                <th className="num">Unread</th><th className="num">Size</th><th /><th />
               </tr>
             </thead>
             <tbody>
-              {error ? <EmptyRow cols={6}>{error}</EmptyRow>
-                : !data ? <EmptyRow cols={6}>Loading…</EmptyRow>
-                : !list.length ? <EmptyRow cols={6}>{accounts.length ? "No matches." : "No accounts yet."}</EmptyRow>
+              {error ? <EmptyRow cols={7}>{error}</EmptyRow>
+                : !data ? <EmptyRow cols={7}>Loading…</EmptyRow>
+                : !list.length ? <EmptyRow cols={7}>{accounts.length ? "No matches." : "No accounts yet."}</EmptyRow>
                 : list.map((a) => (
                   <tr key={a.email} className="clickable" onClick={() => open(<AccountDetails account={a} />)}>
                     <td><div className="user-cell"><span className="avatar">{a.email[0]}</span>{a.email}</div></td>
@@ -79,6 +80,11 @@ export function Accounts() {
                     <td className="num">{a.messages.toLocaleString()}</td>
                     <td className="num">{a.unseen ? <b>{a.unseen.toLocaleString()}</b> : "0"}</td>
                     <td className="num">{fmtSize(a.size)}</td>
+                    <td className="act" onClick={(e) => e.stopPropagation()}>
+                      <button className="icon-btn" title="Add to Outlook" onClick={() => open(<AddToOutlook email={a.email} />)}>
+                        <Icon name="mail" />
+                      </button>
+                    </td>
                     <td className="act" onClick={(e) => e.stopPropagation()}><MoreMenu items={menu(a)} /></td>
                   </tr>
                 ))}
@@ -140,6 +146,41 @@ function NewAccount({ domains, onCreated }: { domains: string[]; onCreated: () =
       </div>
       <DomainField domains={domains} value={domain} onChange={setDomain} />
       <PasswordField value={password} onChange={setPassword} />
+    </Modal>
+  );
+}
+
+// AddToOutlook walks through adding an account to the Outlook app. Outlook
+// finds the server and ports itself through Autodiscover, so the address
+// and password are all it needs; the password can't be read back, so a new
+// one can be made here to paste.
+function AddToOutlook({ email }: { email: string }) {
+  const [password, setPassword] = useState("");
+  const [manual, setManual] = useState(false);
+  return (
+    <Modal title={"Add " + email + " to Outlook"} wide footer={<CloseButton label="Done" />}>
+      <ol className="perm-list">
+        <li>In the Outlook app, add an account: <b>File → Add Account</b> in classic Outlook, or
+          <b> Settings → Accounts → Add account</b> in the new Outlook.</li>
+        <li>Paste the address and continue.
+          <div className="secret-box"><span>{email}</span><CopyButton text={email} label="Address copied" /></div>
+        </li>
+        <li>Paste the password and connect. Outlook fills in the server and ports by itself.
+          {password
+            ? <div className="secret-box"><span>{password}</span><CopyButton text={password} label="Password copied" /></div>
+            : <div>
+              <AsyncButton className="btn sm" onClick={async () => setPassword((await api.setPassword(email, "")).password)}>
+                <Icon name="key" />Make a new password
+              </AsyncButton>
+              <div className="muted small">Use the current one if you have it. A new one stops the old one working in other apps.</div>
+            </div>}
+        </li>
+      </ol>
+      <p className="muted small">
+        Use the Outlook app: outlook.com in a browser can't add other mail servers. If Outlook asks for the account type,
+        choose <b>IMAP</b>{manual ? " and enter:" : <> (<a href="#" onClick={(e) => { e.preventDefault(); setManual(true); }}>show the settings</a>).</>}
+      </p>
+      {manual && <ClientSettings />}
     </Modal>
   );
 }
