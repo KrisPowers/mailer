@@ -125,10 +125,14 @@ func readJSON(r *http.Request, v any) error {
 
 // ---- checks ----
 
+// Check is one line of the status: what was checked, the result, and for
+// a failure, what to do about it. Area groups it under a status icon.
 type Check struct {
+	Area   string `json:"area"` // cloudflare, tailscale, sending
 	Name   string `json:"name"`
 	OK     bool   `json:"ok"`
 	Detail string `json:"detail"`
+	Fix    string `json:"fix,omitempty"`
 }
 
 type Checks struct {
@@ -176,47 +180,64 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 	c.Tunnel = s.Tunnel.Status()
 
 	cf := c.Cloudflare
-	add := func(name string, ok bool, detail string) { c.Items = append(c.Items, Check{name, ok, detail}) }
+	add := func(area, name string, ok bool, detail, fix string) {
+		if ok {
+			fix = ""
+		}
+		c.Items = append(c.Items, Check{area, name, ok, detail, fix})
+	}
+	const repair = "Click Repair: it re-applies the Cloudflare setup."
 	if !cf.Connected {
-		add("Cloudflare", false, "Not connected yet")
+		add("cloudflare", "Cloudflare", false, "Not connected yet", "Click Connect Cloudflare in setup.")
 	} else {
 		tunnelDetail := "not reporting"
 		if cf.TunnelStatus != "" {
 			tunnelDetail = fmt.Sprintf("%s · %d connection(s)", cf.TunnelStatus, cf.TunnelConns)
 		}
-		add("Cloudflare tunnel", cf.TunnelStatus == "healthy", tunnelDetail)
+		if cf.Error != "" {
+			tunnelDetail = cf.Error
+		}
+		add("cloudflare", "Cloudflare tunnel", cf.TunnelStatus == "healthy", tunnelDetail,
+			"The connection from this computer to Cloudflare is down, so new mail waits at Cloudflare. "+
+				"Mailer restarts it by itself. If it stays down: "+repair)
 		for _, d := range cf.Domains {
-			add("Domain "+d.Name, d.OK(), domainDetail(d))
+			add("cloudflare", "Domain "+d.Name, d.OK(), domainDetail(d), repair)
 		}
 		inboundDetail := "reachable from the internet"
 		if !cf.PublicHealthy {
 			inboundDetail = cfg.Cloudflare.InboundHost + " not reachable"
 		}
-		add("Inbound path", cf.PublicHealthy, inboundDetail)
+		add("cloudflare", "Incoming mail path", cf.PublicHealthy, inboundDetail,
+			"Cloudflare can't reach this computer, so new mail waits at Cloudflare. "+repair)
 	}
 	ts := c.Tailscale
+	const enable = "Click Enable Funnel."
 	switch {
 	case !ts.Installed:
-		add("Tailscale", false, "Not installed")
+		add("tailscale", "Tailscale", false, "Not installed", "Install Tailscale from tailscale.com/download and sign in.")
 	case !ts.Running:
-		add("Tailscale", false, "Not signed in ("+orDash(ts.State)+")")
+		add("tailscale", "Tailscale", false, "Not signed in ("+orDash(ts.State)+")", "Open Tailscale on this computer and sign in.")
 	default:
-		add("Tailscale", true, ts.DNSName)
-		add("Funnel: reading mail (IMAP :443)", ts.FunnelIMAP, ts.DNSName+":443")
-		add("Funnel: sending mail (SMTP :8443)", ts.FunnelSubmission, ts.DNSName+":8443")
+		add("tailscale", "Tailscale", true, ts.DNSName, "")
+		add("tailscale", "Funnel for reading mail (IMAP :443)", ts.FunnelIMAP, ts.DNSName+":443",
+			"Outlook and the Gmail app can't reach your inbox. "+enable)
+		add("tailscale", "Funnel for sending mail (SMTP :8443)", ts.FunnelSubmission, ts.DNSName+":8443",
+			"Outlook and the Gmail app can't send. "+enable)
 		if ts.FunnelIMAP {
 			err := probeIMAP(ctx, ts.DNSName+":443")
-			add("IMAP answers over Funnel", err == nil, errText(err, "greeting received"))
+			add("tailscale", "Mail server answers over Funnel", err == nil, errText(err, "greeting received"),
+				"Funnel is on but the mail server didn't answer through it. "+enable)
 		}
 	}
 	if cfg.SendViaCloudflare {
-		add("Sending", true, "through Cloudflare Email Sending")
+		add("sending", "Sending", true, "through Cloudflare Email Sending", "")
 	} else {
-		add("Outbound port 25 (sending replies)", port25 == nil,
-			errText(port25, "your ISP allows outbound mail"))
+		add("sending", "Outbound port 25", port25 == nil, errText(port25, "your internet provider allows sending mail"),
+			"Your internet provider blocks port 25, so mail to other servers can't leave this computer and waits in the queue. "+
+				"Turn on Send through Cloudflare in Settings (needs Cloudflare's Workers Paid plan).")
 	}
 	if t := s.MTA.LastInbound(); !t.IsZero() {
-		add("Last message received", true, t.Format("Jan 2 15:04"))
+		add("sending", "Last message received", true, t.Format("Jan 2 15:04"), "")
 	}
 
 	s.mu.Lock()
