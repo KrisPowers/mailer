@@ -143,27 +143,56 @@ func (e *ActionNeeded) Error() string { return e.Message }
 // EnableFunnel publishes IMAP on :443 and submission on :8443. Tailscale
 // terminates TLS with its own certificate and forwards to our loopback
 // ports with a PROXY protocol header carrying the client address.
-func EnableFunnel(ctx context.Context, imapPort, subPort int) error {
+//
+// The first time, Tailscale asks for Funnel to be allowed on the tailnet:
+// its approval page is opened with open, and EnableFunnel keeps trying
+// until it's approved, for up to five minutes.
+func EnableFunnel(ctx context.Context, imapPort, subPort int, open func(url string)) error {
+	deadline := time.Now().Add(5 * time.Minute)
+	opened := ""
 	for _, f := range []struct{ public, local int }{{443, imapPort}, {8443, subPort}} {
-		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		out, err := run(cctx, "funnel", "--bg", "--yes", "--proxy-protocol=2",
-			fmt.Sprintf("--tls-terminated-tcp=%d", f.public), fmt.Sprintf("tcp://127.0.0.1:%d", f.local))
-		cancel()
-		text := strings.TrimSpace(string(out))
-		if u := urlRe.FindString(text); u != "" && (err != nil || strings.Contains(strings.ToLower(text), "enable")) {
-			return &ActionNeeded{URL: u, Message: "Allow Funnel for this machine, then click Enable again"}
-		}
-		if err != nil {
-			if strings.Contains(text, "Access denied") || strings.Contains(text, "permission") {
-				return fmt.Errorf("%s — run once as admin: tailscale set --operator=%s", text, currentUser())
+		for {
+			cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			out, err := run(cctx, "funnel", "--bg", "--yes", "--proxy-protocol=2",
+				fmt.Sprintf("--tls-terminated-tcp=%d", f.public), fmt.Sprintf("tcp://127.0.0.1:%d", f.local))
+			cancel()
+			text := strings.TrimSpace(string(out))
+			u := urlRe.FindString(text)
+			if u == "" && err == nil {
+				break
 			}
-			if text == "" {
-				text = err.Error()
+			if u == "" {
+				return funnelError(text, err)
 			}
-			return errors.New(text)
+			// Waiting for approval: the CLI either exits after printing the
+			// link or blocks until approved (and is stopped at 30s).
+			if u != opened && open != nil {
+				open(u)
+				opened = u
+			}
+			if time.Now().After(deadline) {
+				return &ActionNeeded{URL: u, Message: "Allow Funnel for this machine in Tailscale, then click Enable again"}
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(3 * time.Second):
+			}
 		}
 	}
 	return nil
+}
+
+func funnelError(text string, err error) error {
+	switch {
+	case strings.Contains(text, "flag provided but not defined"):
+		return errors.New("Tailscale on this computer is too old for Funnel's TCP forwarding; update it from tailscale.com/download, then click Enable again")
+	case runtime.GOOS != "windows" && (strings.Contains(text, "Access denied") || strings.Contains(text, "permission")):
+		return fmt.Errorf("%s. Run once as admin: tailscale set --operator=%s", text, currentUser())
+	case text == "":
+		return err
+	}
+	return errors.New(text)
 }
 
 func currentUser() string {

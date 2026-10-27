@@ -472,7 +472,10 @@ func (s *Server) tailscaleEnable(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "Sign in to Tailscale on this machine first.", "action_url": st.LoginURL})
 		return
 	}
-	err := tailscale.EnableFunnel(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission)
+	err := tailscale.EnableFunnel(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission, s.OpenURL)
+	if err != nil {
+		s.Log.Printf("tailscale: enabling Funnel: %v", err)
+	}
 	var an *tailscale.ActionNeeded
 	if errors.As(err, &an) {
 		writeJSON(w, map[string]any{"error": an.Message, "action_url": an.URL})
