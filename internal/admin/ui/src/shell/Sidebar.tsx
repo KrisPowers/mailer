@@ -1,28 +1,31 @@
-import { Icon, type IconName } from "../components/Icon";
 import { useOverview } from "../overview";
-import type { View } from "../router";
+import { href, type View } from "../router";
+import { IconButton } from "../ui/Button";
+import { Icon, type IconName } from "../ui/Icon";
 
-export function Sidebar({ view, onCollapse }: { view: View; onCollapse: () => void }) {
+export function Sidebar({ view, collapsed, onCollapse }: { view: View; collapsed: boolean; onCollapse: () => void }) {
   const { ov } = useOverview();
-  const link = (v: View, icon: IconName, label: string, count?: number, warn?: boolean) => (
-    <a href={"#" + v} className={view === v ? "active" : ""} title={label}>
+  const item = (v: View, icon: IconName, label: string, count?: number) => (
+    <a href={href(v)} className={"nav-item" + (view === v ? " active" : "")} aria-current={view === v ? "page" : undefined}
+      data-tip={collapsed ? label : undefined}>
       <Icon name={icon} />
-      <span>{label}</span>
-      {!!count && <em className={"count" + (warn ? " warn" : "")}>{count}</em>}
+      <span className="nav-label">{label}</span>
+      {!!count && <span className="nav-count">{count}</span>}
     </a>
   );
   return (
-    <nav className="sidebar">
-      <button className="icon-btn side-toggle" title="Collapse menu" onClick={onCollapse}><Icon name="sidebar" /></button>
-      {link("dashboard", "grid", "Dashboard")}
-      {link("accounts", "users", "Accounts", ov?.accounts)}
-      {link("domains", "globe", "Domains", ov?.domains?.length)}
-      {link("aliases", "at", "Aliases")}
-      {link("queue", "send", "Outbound queue", ov?.queue, true)}
-      {link("signins", "key", "Sign-ins")}
-      {link("logs", "terminal", "Logs")}
+    <nav className="sidebar" aria-label="Main">
+      {item("dashboard", "grid_view", "Dashboard")}
+      {item("accounts", "group", "Accounts", ov?.accounts)}
+      {item("domains", "language", "Domains", ov?.domains?.length)}
+      {item("aliases", "alternate_email", "Aliases")}
+      {item("queue", "outbox", "Outbound queue", ov?.queue)}
+      {item("signins", "key", "Sign-ins")}
+      {item("logs", "terminal", "Logs")}
       <hr />
-      {link("settings", "settings", "Settings")}
+      {item("settings", "settings", "Settings")}
+      <IconButton className="collapse" icon={collapsed ? "left_panel_open" : "left_panel_close"} label={collapsed ? "Expand menu" : "Collapse menu"}
+        tone="accent" onClick={onCollapse} />
     </nav>
   );
 }
