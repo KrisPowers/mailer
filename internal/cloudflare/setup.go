@@ -44,6 +44,10 @@ type Setup struct {
 	// means loopback. The container listens on 0.0.0.0 and publishes the
 	// port to the host's loopback.
 	CallbackHost string
+	// DashboardService is where the tunnel sends the dashboard's public
+	// address: a hub's URL when one runs mailer (see admin/hub.go),
+	// otherwise empty for mailer's own dashboard port.
+	DashboardService string
 
 	mu sync.Mutex // one credential renewal at a time
 
@@ -207,7 +211,7 @@ func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host 
 		return "", "", err
 	}
 	cfg.Domains = domains
-	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, ingressRules(cfg, host)); err != nil {
+	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, ingressRules(cfg, host, s.DashboardService)); err != nil {
 		return "", "", err
 	}
 	on := true
@@ -228,8 +232,8 @@ func clientHosts(domain string) []string {
 // ingressRules is everything the tunnel serves: the Worker's inbound
 // address and every domain's mail app settings names go to the inbound
 // port, and the dashboard's address, when remote access is on, to the
-// dashboard.
-func ingressRules(cfg config.Config, inbound string) []IngressRule {
+// dashboard: dashboard when it's set, otherwise mailer's own.
+func ingressRules(cfg config.Config, inbound, dashboard string) []IngressRule {
 	in := fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)
 	rules := []IngressRule{{inbound, in}}
 	for _, d := range cfg.Domains {
@@ -238,7 +242,11 @@ func ingressRules(cfg config.Config, inbound string) []IngressRule {
 		}
 	}
 	if h := cfg.DashboardHost(); h != "" {
-		rules = append(rules, IngressRule{h, fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)})
+		svc := dashboard
+		if svc == "" {
+			svc = fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)
+		}
+		rules = append(rules, IngressRule{h, svc})
 	}
 	return rules
 }
@@ -248,7 +256,7 @@ func ingressRules(cfg config.Config, inbound string) []IngressRule {
 // tunnel's routes only when they differ.
 func (s *Setup) syncClientHosts(ctx context.Context, c *Client, cfg config.Config) error {
 	cf := cfg.Cloudflare
-	want := ingressRules(cfg, cf.InboundHost)
+	want := ingressRules(cfg, cf.InboundHost, s.DashboardService)
 	have, err := c.TunnelIngress(ctx, cf.AccountID, cf.TunnelID)
 	if err != nil {
 		return err
