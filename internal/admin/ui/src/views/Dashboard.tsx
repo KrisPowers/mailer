@@ -31,11 +31,11 @@ export function Dashboard() {
     <>
       <PageHead title="Dashboard" sub={ov?.domain} />
       <div className="kpis">
-        <Kpi icon="users" value={list.length} label="Accounts" />
-        <Kpi icon="inbox" value={totals.msgs.toLocaleString()} label={"Messages · " + fmtSize(totals.size)} />
-        <Kpi icon="mail" value={totals.unseen.toLocaleString()} label="Unread in inboxes" />
-        <Kpi icon="send" value={ov?.queue ?? 0} label="Waiting to send" />
-        <Kpi icon="clock" value={timeAgo(ov?.last_inbound)} label="Last received" />
+        <Kpi value={list.length} label="Accounts" />
+        <Kpi value={totals.msgs.toLocaleString()} label={"Messages · " + fmtSize(totals.size)} />
+        <Kpi value={totals.unseen.toLocaleString()} label="Unread in inboxes" />
+        <Kpi value={ov?.queue ?? 0} label="Waiting to send" />
+        <Kpi value={timeAgo(ov?.last_inbound)} label="Last received" />
       </div>
       <div className="grid-2">
         <div>
