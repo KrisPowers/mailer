@@ -1,138 +1,92 @@
 # Mailer
 
-A self-hosted mail server for your own domains. Outlook or the Gmail app is the UI;
-this program stores, receives, and sends the mail. No router ports are opened.
+Self-hosted mail, zero ports.
 
-```
+Mailer is a mail server for your own domains that runs in one Docker container.
+Outlook, the Gmail app or Thunderbird is the inbox; Mailer stores, receives and
+sends the mail. Nothing on your router is opened and your home IP never appears
+in DNS.
+
+```text
 Internet mail ──▶ Cloudflare Email Routing ──▶ Worker ──▶ Cloudflare Tunnel ──▶ mailer
-Outlook / Gmail app ──▶ Tailscale Funnel (:443 IMAP, :8443 SMTP) ─────────────▶ mailer
-Your replies ──▶ mailer ──▶ Cloudflare Email Sending ──▶ recipient (DKIM-signed)
+Mail apps     ──▶ Tailscale Funnel (:443 IMAP, :8443 SMTP) ─────────────────▶ mailer
+Your replies  ──▶ mailer ──▶ Cloudflare Email Sending ──▶ recipient (DKIM-signed)
 ```
 
-## Setup
+## Features
 
-Mailer runs as one Docker container: the mail server with its web dashboard,
-`cloudflared` for the Cloudflare Tunnel, and Tailscale for Funnel. Nothing on your
-router or computer is opened; the dashboard is published to this computer only.
+- **Set up by itself.** Connect Cloudflare once and every domain on the account
+  gets Email Routing, the inbound Worker, Email Sending, and DKIM, DMARC and SPF
+  records. Domains added to Cloudflare later are picked up automatically.
+- **No open ports.** Inbound mail comes through a Cloudflare Tunnel and mail apps
+  connect through Tailscale Funnel, both run inside the container.
+- **Mail app autoconfig.** Outlook and Thunderbird need only the address and
+  password.
+- **Web dashboard.** Accounts, aliases and catch-alls, the mail queue, logs, and
+  a per-account sign-in record with a one-click test.
 
-1. **Start it** from the repo folder (Docker Desktop shows it as `mailer` afterwards):
-   ```sh
-   docker compose up -d --build
-   ```
-2. **Open http://localhost:8080** and:
-   - **Connect Cloudflare**, then approve in the tab that opens. Mailer signs in
-     through Cloudflare's own `cf` command-line app, keeps the sign-in renewed, and
-     sets everything up by itself.
-   - **Tailscale → Enable**. The first time it shows a link to sign this server in
-     to your tailnet, then one to allow Funnel; click Enable again after each.
-   - **New account** (top right)
+## Requirements
 
-Every other domain on the Cloudflare account is connected by itself, at startup and
-every 10 minutes, including domains added to Cloudflare later. Each account's page
-lists the settings to enter in Outlook or the Gmail app. The container restarts by
-itself with Docker.
+- Docker with Compose v2 ([Docker Desktop](https://docs.docker.com/get-docker/)
+  on Windows and macOS)
+- A [Cloudflare](https://dash.cloudflare.com/) account with your domains, on the
+  Workers Paid plan for sending
+- A [Tailscale](https://tailscale.com/) account
 
-Set `TS_AUTHKEY` (a [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys))
-before starting to sign Tailscale in without the link. `TS_HOSTNAME` in
-`compose.yaml` names the server on your tailnet (default `mail`).
+## Install
 
-### Moving from the desktop app
+Linux and macOS:
 
-On Windows the container uses the desktop app's data folder,
-`%LOCALAPPDATA%\mailer\data`, so accounts, mail and the Cloudflare setup carry over.
-Quit the desktop app (**Mailer → Quit Mailer**) before starting the container. The
-container is a new machine on your tailnet, so enable Funnel once from the dashboard
-and point mail apps at the new server name it shows.
+```sh
+curl -fsSL https://raw.githubusercontent.com/KrisPowers/Mailer/main/scripts/install.sh | sh
+```
 
-## What the setup does for you
+Windows (PowerShell):
 
-- Cloudflare, per domain: deploys the email Worker, turns on Email Routing, points the
-  catch-all at the Worker, onboards the domain for Email Sending, and publishes the
-  DKIM, DMARC, and SPF records. One tunnel
-  serves every domain; the first domain connected (the primary) carries the server's
-  hostname and the tunnel's address
-- Keeps `cloudflared` (in the image) connected
-- Mail app settings: `autodiscover.<domain>` (Outlook) and `autoconfig.<domain>`
-  (Thunderbird and others) are routed through the tunnel and answer with the server
-  and ports, so a mail app needs only the address and password
-- Tailscale Funnel: IMAP on port 443 and sending on port 8443, with Tailscale's TLS
-  certificate and the real client IP passed through for rate limiting
+```powershell
+irm https://raw.githubusercontent.com/KrisPowers/Mailer/main/scripts/install.ps1 | iex
+```
 
-## Sending
+The installer puts `compose.yaml` and a `.env` in `~/.mailer` (Windows:
+`%LOCALAPPDATA%\mailer`), pulls the image and starts the container. Run it again
+to update.
 
-Outgoing mail is handed to [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/),
-part of Cloudflare Email Service. Nothing is sent from this machine and no port 25 is
-used or opened, and your home IP is never published in DNS. Email Sending needs the
-Workers Paid plan ($5/month) on the Cloudflare account. Setup onboards every domain
-and publishes the records it asks for.
+From a checkout instead:
 
-Cloudflare takes messages up to 5 MB; a larger message bounces back to the sender with
-the reason. Messages Cloudflare can't take yet (for example, before the plan is active)
-wait in the **Outbound queue** and are retried for four days.
+```sh
+git clone https://github.com/KrisPowers/Mailer.git
+cd Mailer
+docker compose up -d --build
+```
 
-## The dashboard
+## Get started
 
-Laid out after Docker Desktop. The header has search (Ctrl+K), mail app settings,
-re-check, settings and **New account**; the status bar along the bottom shows whether
-the server is running, and any failing checks with the button that fixes each.
+Open <http://localhost:8080>, then:
 
-| Page | What it's for |
+1. **Connect Cloudflare** and approve in the tab that opens. Mailer signs in
+   through Cloudflare's `cf` command-line app, keeps the sign-in renewed, and sets
+   up every domain on the account.
+2. **Tailscale, Enable.** The first time it shows a link to sign this server in to
+   your tailnet, then one to allow Funnel; click Enable again after each. Set
+   `TS_AUTHKEY` in `.env` to skip the first link.
+3. **New account** (top right). The account's page lists the settings to enter in
+   your mail app.
+
+## Documentation
+
+| Guide | What's in it |
 |---|---|
-| **Accounts** | The accounts table. Each account's page has its IMAP and SMTP settings (copy all, print), Controls to lock receiving, sending or sign-in, its aliases and catch-all, folders, and sign-ins with a test |
-| **Queue** | All mail, received and sent: waiting, delivered, junk, rejected, sent, bounced |
-| **Logs** | Recent server activity |
-| **Settings** (gear, top right) | DMARC strictness, saved sent copies, message size, the Cloudflare SMTP token, Cloudflare and Tailscale connections |
+| [How it works](docs/how-it-works.md) | What setup does, sending, limits |
+| [Configuration](docs/configuration.md) | `.env` settings, data folder, backups |
+| [Dashboard](docs/dashboard.md) | Pages and controls |
+| [Troubleshooting](docs/troubleshooting.md) | When a mail app can't sign in |
+| [Development](docs/development.md) | Building, testing, the dashboard UI |
 
-`compose.yaml` publishes the dashboard on 127.0.0.1 only, so it can only be reached
-from the computer running Docker.
+## Contributing
 
-## When a mail app can't sign in
+Issues and pull requests are welcome; see [CONTRIBUTING](.github/CONTRIBUTING.md).
+Report security problems privately as described in [SECURITY](.github/SECURITY.md).
 
-Open the account and its **Sign-ins** tab. Every IMAP and SMTP sign-in attempt is listed
-with the app's name, the address it came from (the real one, passed through by Funnel)
-and the result: wrong password, blocked, sign-in locked, not encrypted, a sign-in method
-that isn't offered, or an app that connected and left without trying, with the commands
-it sent first.
+## License
 
-- **Nothing listed** when the app fails: it never reached the server. Check the
-  server name and ports it uses against the account's **Credentials** tab.
-- **Blocked**: five failures in 15 minutes block that address. Outlook and Gmail sign
-  in from their own servers, so one wrong password saved in the app can block it;
-  fix the password, then **Unblock** it from that row.
-- **Test sign-in**, on the same tab, checks the password and then signs in to IMAP
-  and SMTP through the public address, step by step.
-
-Gmail on the web no longer checks other mail accounts (Google ended that in 2026);
-use the Gmail app's **Add account → Other** instead.
-
-## Data
-
-Mail, accounts, keys, settings, the sign-in record (`signins.log`) and Tailscale's
-state live in the container's `/data`, which `compose.yaml` maps to `%LOCALAPPDATA%\mailer\data` on Windows and
-`./mailer/data` elsewhere. Back that folder up.
-
-## Limits
-
-- 25 MB per message (Cloudflare Email Routing's limit)
-- Each received email uses one Workers request, from your Cloudflare account's free daily allowance
-
-## Development
-
-```sh
-go test ./...
-MAILER_NET_TESTS=1 go test ./internal/tunnel   # also tests the real cloudflared download
-```
-
-### Dashboard
-
-The dashboard is React + TypeScript, built with Vite, in `internal/admin/ui`.
-The image builds it itself. A copy in `internal/admin/web` is committed so `go vet`,
-`go test` and builds outside Docker work without Node; `scripts\build.ps1` (or
-`npm run build`) refreshes it.
-
-```sh
-cd internal/admin/ui
-npm install
-npm run dev     # hot reload on :5173, proxies /api to a running mailer on :8080
-npm run build   # type-check, then rebuild internal/admin/web; commit the result
-```
+[MIT](LICENSE)
