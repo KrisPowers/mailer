@@ -19,6 +19,7 @@ const (
 	BadPassword = "bad_password"
 	UnknownUser = "unknown_user"
 	Blocked     = "blocked"     // too many recent failures from the address
+	Locked      = "locked"      // an administrator locked the account's sign-in
 	NeedsTLS    = "needs_tls"   // tried to sign in over an unencrypted connection
 	Unsupported = "unsupported" // asked for a sign-in method we don't offer
 	Malformed   = "malformed"

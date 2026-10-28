@@ -1,4 +1,3 @@
-import { timeAgo } from "../format";
 import { statusOf, useOverview } from "../overview";
 import { href } from "../router";
 import { Icon } from "../ui/Icon";
@@ -20,7 +19,6 @@ export function StatusBar() {
         <span>Accounts {ov?.accounts ?? 0}</span>
         <span>Domains {ov?.domains?.length ?? 0}</span>
         <span>Queue {ov?.queue ?? 0}</span>
-        <span>Last received {timeAgo(ov?.last_inbound)}</span>
       </span>
       <span className="statusbar-right">
         <a href={href("logs")}><Icon name="terminal" size={16} />Logs</a>

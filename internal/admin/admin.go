@@ -25,6 +25,7 @@ import (
 	"mailer/internal/cloudflare"
 	"mailer/internal/config"
 	"mailer/internal/logbuf"
+	"mailer/internal/maillog"
 	"mailer/internal/mta"
 	"mailer/internal/queue"
 	"mailer/internal/store"
@@ -70,9 +71,11 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/accounts", s.createAccount)
 	mux.HandleFunc("POST /api/accounts/password", s.resetPassword)
 	mux.HandleFunc("POST /api/accounts/delete", s.deleteAccount)
+	mux.HandleFunc("POST /api/accounts/locks", s.setLocks)
 	mux.HandleFunc("GET /api/aliases", s.getAliases)
 	mux.HandleFunc("PUT /api/aliases", s.putAliases)
 	mux.HandleFunc("GET /api/queue", s.getQueue)
+	mux.HandleFunc("GET /api/mail", s.getMail)
 	mux.HandleFunc("POST /api/queue/retry", s.retryQueue)
 	mux.HandleFunc("GET /api/logs", s.getLogs)
 	mux.HandleFunc("GET /api/signins", s.getSignIns)
@@ -511,13 +514,14 @@ type accountInfo struct {
 	Unseen    int           `json:"unseen"`
 	Size      int64         `json:"size"`
 	Aliases   []string      `json:"aliases"`
+	Locks     users.Locks   `json:"locks"`
 }
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Cfg.Get()
 	out := []accountInfo{}
 	for _, email := range s.Users.List() {
-		ai := accountInfo{Email: email, Aliases: []string{}}
+		ai := accountInfo{Email: email, Aliases: []string{}, Locks: s.Users.Locks(email)}
 		if acct, err := s.Store.Account(email); err == nil {
 			for _, mb := range acct.List() {
 				st, err := acct.Status(mb.Name)
@@ -632,6 +636,24 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+// setLocks turns an account's receive, send and sign-in locks on or off.
+func (s *Server) setLocks(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string
+		users.Locks
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if err := s.Users.SetLocks(req.Email, req.Locks); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	s.Log.Printf("admin: locks for %s: receive=%v send=%v sign-in=%v", req.Email, req.Receive, req.Send, req.Login)
+	writeJSON(w, req.Locks)
+}
+
 func (s *Server) getAliases(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, s.Cfg.Get().Aliases)
 }
@@ -681,6 +703,15 @@ func (s *Server) getQueue(w http.ResponseWriter, r *http.Request) {
 		items = []*queue.Item{}
 	}
 	writeJSON(w, items)
+}
+
+// getMail returns what happened to recent messages, received and sent.
+func (s *Server) getMail(w http.ResponseWriter, r *http.Request) {
+	entries := s.MTA.Mail.Recent()
+	if entries == nil {
+		entries = []maillog.Entry{}
+	}
+	writeJSON(w, entries)
 }
 
 func (s *Server) retryQueue(w http.ResponseWriter, r *http.Request) {

@@ -19,6 +19,7 @@ import (
 
 	"mailer/internal/config"
 	"mailer/internal/mailauth"
+	"mailer/internal/maillog"
 	"mailer/internal/message"
 	"mailer/internal/queue"
 	"mailer/internal/smtp"
@@ -35,6 +36,7 @@ type MTA struct {
 	// DKIM returns the signer for a domain, or nil.
 	DKIM func(domain string) *mailauth.Signer
 	Log  *log.Logger
+	Mail *maillog.Log // what happened to each message, for the dashboard
 
 	lastInbound atomic.Int64 // unix seconds
 }
@@ -120,8 +122,12 @@ func (m *MTA) CheckRecipient(rcpt string) error {
 	if !cfg.IsLocalDomain(domain) {
 		return &smtp.Error{Code: 554, Enhanced: "5.7.1", Msg: "relay access denied"}
 	}
-	if _, ok := m.Resolve(rcpt); !ok {
+	user, ok := m.Resolve(rcpt)
+	if !ok {
 		return &smtp.Error{Code: 550, Enhanced: "5.1.1", Msg: "no such user"}
+	}
+	if m.Users.Locks(user).Receive {
+		return &smtp.Error{Code: 550, Enhanced: "5.2.1", Msg: "mailbox is not accepting mail"}
 	}
 	return nil
 }
@@ -134,6 +140,7 @@ type InboundMessage struct {
 	To       []string
 	Data     []byte
 	Via      string // e.g. "Cloudflare Email Routing"
+	Junk     bool   // set by Receive when it filed the message in Junk
 }
 
 // spfFallback is a pre-computed SPF result, used when RemoteIP is unknown.
@@ -227,6 +234,7 @@ func (m *MTA) Receive(msg *InboundMessage, spfFallback mailauth.SPFResult) error
 		}
 		delivered[user] = true
 	}
+	msg.Junk = junk
 	m.lastInbound.Store(time.Now().Unix())
 	m.Log.Printf("inbound: from=%s to=%v spf=%s dmarc=%s junk=%v size=%d",
 		msg.From, msg.To, spf, dmarc.Result, junk, len(msg.Data))
@@ -317,6 +325,9 @@ func stripOwnAuthResults(data []byte, hostname string) []byte {
 type Submission struct{ *MTA }
 
 func (b Submission) CheckSender(env *smtp.Envelope) error {
+	if b.Users.Locks(env.AuthUser).Send {
+		return &smtp.Error{Code: 550, Enhanced: "5.7.1", Msg: "sending is locked for this account"}
+	}
 	if env.From == "" || !b.mayUse(env.AuthUser, env.From) {
 		return &smtp.Error{Code: 553, Enhanced: "5.7.1", Msg: "sender address not owned by " + env.AuthUser}
 	}
@@ -330,8 +341,12 @@ func (b Submission) CheckRecipient(env *smtp.Envelope, rcpt string) error {
 		return &smtp.Error{Code: 501, Enhanced: "5.1.3", Msg: "invalid recipient"}
 	}
 	if cfg.IsLocalDomain(domain) {
-		if _, ok := b.Resolve(rcpt); !ok {
+		user, ok := b.Resolve(rcpt)
+		if !ok {
 			return &smtp.Error{Code: 550, Enhanced: "5.1.1", Msg: "no such user"}
+		}
+		if b.Users.Locks(user).Receive {
+			return &smtp.Error{Code: 550, Enhanced: "5.2.1", Msg: "mailbox is not accepting mail"}
 		}
 	}
 	return nil
@@ -383,6 +398,8 @@ func (b Submission) Deliver(env *smtp.Envelope) error {
 					return tempErr("local delivery failed")
 				}
 				delivered[user] = true
+				b.Mail.Add(maillog.Entry{Dir: maillog.Out, From: env.From, To: rcpt, Size: len(data),
+					Status: maillog.Delivered, Detail: "to " + user + " on this server"})
 			}
 			continue
 		}

@@ -549,6 +549,10 @@ func (s *session) authenticate(args []token) result {
 func (s *session) finishAuth(user, pass string) result {
 	email, okAuth := s.srv.Users.Authenticate(user, pass)
 	if !okAuth {
+		if s.srv.Users.LoginLocked(user) {
+			s.audit(user, audit.Locked, "sign-in is locked for this account")
+			return no("[AUTHENTICATIONFAILED] invalid credentials")
+		}
 		res, detail := audit.BadPassword, "wrong password"
 		if !s.srv.Users.Exists(user) {
 			res, detail = audit.UnknownUser, "no account with this username; use the full email address"

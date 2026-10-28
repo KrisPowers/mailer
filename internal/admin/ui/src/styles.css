@@ -121,16 +121,13 @@ b, .strong { font-weight: 500; }
 
 .header {
   grid-area: header; display: flex; align-items: center; gap: 12px; padding: 0 20px 0 24px;
-  background: var(--header); color: #fff; z-index: 10;
+  background: var(--header); color: #fff; z-index: 10; position: relative;
 }
 .brand { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 22px; letter-spacing: -.02em; }
 .brand:hover { text-decoration: none; }
 .brand span { font-weight: 500; }
-.plan {
-  font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #fff; white-space: nowrap;
-  background: rgba(255, 255, 255, .16); padding: 3px 9px; border-radius: 999px;
-}
-.command { position: relative; margin-left: auto; width: min(576px, 38vw); }
+/* The search sits in the middle of the window, whatever is around it. */
+.command { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(576px, 36vw); }
 .command > .icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #fff; pointer-events: none; }
 .command input {
   width: 100%; height: 40px; padding: 0 76px 0 40px; border: 1px solid transparent; border-radius: var(--radius);
@@ -155,7 +152,7 @@ b, .strong { font-weight: 500; }
 .command-results button.sel { background: var(--hover); }
 .command-results em { margin-left: auto; font-style: normal; font-size: 12px; color: var(--text-3); }
 .command-empty { padding: 14px 10px; color: var(--text-2); }
-.header-icons { display: flex; align-items: center; gap: 4px; margin-left: 12px; }
+.header-icons { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .header .icon-btn { color: #fff; width: 40px; height: 40px; }
 .header .icon-btn .icon { width: 24px; height: 24px; }
 .header .icon-btn:hover, .header .icon-btn.active { background: rgba(255, 255, 255, .12); }
@@ -248,19 +245,24 @@ b, .strong { font-weight: 500; }
 .field { display: grid; gap: 6px; margin-top: 16px; }
 .field label { font-weight: 500; font-size: 13px; }
 .hint { font-size: 12px; color: var(--text-2); }
-.input, .with-suffix, .with-button, .select, .search-field, .stepper {
+.input, .with-button, .select, .search-field, .stepper {
   display: flex; align-items: center; height: 40px; width: 100%; border: 1px solid var(--line-strong); border-radius: var(--radius);
   background: transparent; color: var(--text); font: 400 14px var(--font);
 }
 .input { padding: 0 12px; }
-.with-suffix, .with-button, .search-field, .stepper { overflow: hidden; }
-.with-suffix input, .with-button input, .search-field input, .stepper input {
+.with-button, .search-field, .stepper { overflow: hidden; }
+.with-button input, .search-field input, .stepper input, .address input {
   flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: 0; background: transparent; color: inherit; font: inherit; outline: none;
 }
-.with-suffix span { height: 100%; display: grid; place-items: center; padding: 0 12px; color: var(--text-2); background: var(--surface-2); border-left: 1px solid var(--line-strong); }
+.input.address { padding: 0 4px 0 0; }
+.address .at { color: var(--text-2); padding: 0 2px; }
+.address .domain { color: var(--text-2); padding-right: 8px; white-space: nowrap; }
+.select.inline { width: auto; height: 32px; border: 0; padding: 0 4px 0 2px; color: var(--text); flex-shrink: 0; }
+.select.inline:hover { background: var(--hover); }
+.select.inline.open, .select.inline:focus-visible { box-shadow: none; background: var(--hover); }
 .with-button .icon-btn { width: 36px; height: 36px; margin-right: 2px; }
-.input:hover, .with-suffix:hover, .with-button:hover, .select:hover, .search-field:hover, .stepper:hover { border-color: var(--text-3); }
-.input:focus, .with-suffix:focus-within, .with-button:focus-within, .select:focus-visible, .select.open, .search-field:focus-within, .stepper:focus-within {
+.input:hover, .with-button:hover, .select:hover, .search-field:hover, .stepper:hover { border-color: var(--text-3); }
+.input:focus, .address:focus-within, .with-button:focus-within, .select:focus-visible, .select.open, .search-field:focus-within, .stepper:focus-within {
   outline: none; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent);
 }
 input::placeholder { color: var(--text-3); }
@@ -399,10 +401,7 @@ input::placeholder { color: var(--text-3); }
    so short columns sit together instead of spreading across the page. */
 .table th, .table td { text-align: left; padding: 0 28px 0 12px; height: 44px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 .table th:not(.grow) { width: 1%; }
-.table th { position: relative; height: 42px; font-weight: 500; color: var(--text); }
-.table th:not(:first-child):not(:empty)::before {
-  content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 1px; background: var(--line-strong);
-}
+.table th { height: 42px; font-weight: 500; color: var(--text); }
 .table tbody tr:hover td { background: var(--row-hover); }
 .table tr.selected td { background: var(--selected); }
 .table tr.child-row td { background: var(--sidebar); height: 38px; color: var(--text-2); }
@@ -411,6 +410,10 @@ input::placeholder { color: var(--text-3); }
 .table .col-dot { width: 32px; padding-right: 0; }
 .table .col-check { width: 52px; padding: 0 4px 0 8px; }
 .table .col-expand { width: 44px; padding: 0 0 0 4px; }
+.table .col-dir { width: 36px; padding-right: 0; }
+.dir { display: inline-grid; color: var(--text-2); }
+.test-form { margin-bottom: 12px; }
+.test-form .with-button { width: 320px; }
 .table .col-actions { width: 1%; padding-right: 8px; }
 .table th.col-actions { padding-left: 12px; }
 .table tr.empty-row:hover td { background: transparent; }
@@ -523,7 +526,7 @@ input::placeholder { color: var(--text-3); }
 @media (max-width: 780px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "header" "main" "footer"; }
   .header .nav-toggle { display: inline-grid; margin-left: -8px; }
-  .plan, .command, .header-icons { display: none; }
+  .command, .header-icons { display: none; }
   .header-btn { margin-left: auto; }
   .sidebar {
     position: fixed; top: var(--header-h); bottom: var(--footer-h); left: 0; width: 260px; z-index: 30;

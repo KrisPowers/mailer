@@ -101,6 +101,21 @@ func TestAccounts(t *testing.T) {
 		t.Errorf("accounts list: %+v", list)
 	}
 
+	// Locking sign-in stops the password working; unlocking restores it.
+	if code, _ := do(t, h, "POST", "/api/accounts/locks", `{"email":"kris@example.com","lock_login":true,"lock_send":true}`, hdr); code != 200 {
+		t.Fatalf("locks: %d", code)
+	}
+	if l := s.Users.Locks("kris@example.com"); !l.Login || !l.Send || l.Receive {
+		t.Errorf("locks saved as %+v", l)
+	}
+	if _, ok := s.Users.Authenticate("kris@example.com", pw); ok || !s.Users.LoginLocked("kris@example.com") {
+		t.Error("locked account signed in")
+	}
+	do(t, h, "POST", "/api/accounts/locks", `{"email":"kris@example.com"}`, hdr)
+	if _, ok := s.Users.Authenticate("kris@example.com", pw); !ok {
+		t.Error("unlocked account can't sign in")
+	}
+
 	code, out = do(t, h, "POST", "/api/accounts/password", `{"email":"kris@example.com"}`, hdr)
 	if code != 200 || out["password"] == pw {
 		t.Errorf("reset: %d %v", code, out)

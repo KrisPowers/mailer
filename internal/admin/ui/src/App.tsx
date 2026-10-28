@@ -6,7 +6,6 @@ import { Dashboard } from "./pages/Dashboard";
 import { Logs } from "./pages/Logs";
 import { Queue } from "./pages/Queue";
 import { Settings } from "./pages/Settings";
-import { SignIns } from "./pages/SignIns";
 import { useRoute } from "./router";
 import { Header } from "./shell/Header";
 import { Sidebar } from "./shell/Sidebar";
@@ -65,7 +64,6 @@ function Shell() {
     dashboard: <Dashboard />,
     accounts: <Accounts param={route.param} />,
     queue: <Queue />,
-    signins: <SignIns />,
     logs: <Logs />,
     settings: <Settings />,
   }[route.view];

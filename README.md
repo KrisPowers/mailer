@@ -78,10 +78,9 @@ the server is running and how many checks need attention.
 
 | Page | What it's for |
 |---|---|
-| **Dashboard** | Key figures and every connection check (tunnel, each domain's Email Routing, MX, SPF, DKIM and DMARC, inbound path, Funnel, Email Sending), with a fix and an action beside anything failing |
-| **Accounts** | Accounts with mail counts and sizes; each account's page has its IMAP and SMTP settings (copy all, print), its aliases and catch-alls, folders and sign-ins |
-| **Outbound queue** | Messages waiting to send; retry them |
-| **Sign-ins** | Every sign-in attempt by a mail app, why it failed, addresses blocked for too many failures, and a test sign-in |
+| **Dashboard** | Four figures and what needs doing (failing checks, blocked addresses, mail waiting, failed sign-ins), each with its button |
+| **Accounts** | The accounts table. Each account's page has its IMAP and SMTP settings (copy all, print), Controls to lock receiving, sending or sign-in, its aliases and catch-all, folders, and sign-ins with a test |
+| **Queue** | All mail, received and sent: waiting, delivered, junk, rejected, sent, bounced |
 | **Logs** | Recent server activity |
 | **Settings** (gear, top right) | DMARC strictness, saved sent copies, message size, the Cloudflare SMTP token, Cloudflare and Tailscale connections |
 
@@ -90,19 +89,19 @@ from the computer running Docker.
 
 ## When a mail app can't sign in
 
-Open **Sign-ins**. Every IMAP and SMTP sign-in attempt is listed with the app's name,
-the address it came from (the real one, passed through by Funnel), the account it
-tried and the result: wrong password, no such account (the username must be the full
-email address), blocked, not encrypted, a sign-in method that isn't offered, or an app
-that connected and left without trying, with the commands it sent first.
+Open the account and its **Sign-ins** tab. Every IMAP and SMTP sign-in attempt is listed
+with the app's name, the address it came from (the real one, passed through by Funnel)
+and the result: wrong password, blocked, sign-in locked, not encrypted, a sign-in method
+that isn't offered, or an app that connected and left without trying, with the commands
+it sent first.
 
 - **Nothing listed** when the app fails: it never reached the server. Check the
-  server name and ports it uses against the dashboard's client settings.
+  server name and ports it uses against the account's **Credentials** tab.
 - **Blocked**: five failures in 15 minutes block that address. Outlook and Gmail sign
   in from their own servers, so one wrong password saved in the app can block it;
-  fix the password, then **Unblock**.
-- **Test sign-in** checks an account's password and then signs in to IMAP and SMTP
-  through the public Funnel address, step by step.
+  fix the password, then **Unblock** it on the Dashboard.
+- **Test sign-in**, on the same tab, checks the password and then signs in to IMAP
+  and SMTP through the public address, step by step.
 
 Gmail on the web no longer checks other mail accounts (Google ended that in 2026);
 use the Gmail app's **Add account → Other** instead.

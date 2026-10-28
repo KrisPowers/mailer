@@ -97,6 +97,24 @@ export interface Account {
   unseen: number;
   size: number;
   aliases: string[];
+  locks: Locks;
+}
+
+// Locks are an administrator's per-account switches.
+export interface Locks {
+  lock_receive?: boolean;
+  lock_send?: boolean;
+  lock_login?: boolean;
+}
+
+export interface MailEntry {
+  at: string;
+  dir: "in" | "out";
+  from: string;
+  to: string;
+  size: number;
+  status: "delivered" | "junk" | "rejected" | "failed" | "sent" | "bounced";
+  detail?: string;
 }
 
 export type Aliases = Record<string, string>;

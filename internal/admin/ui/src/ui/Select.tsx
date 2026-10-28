@@ -9,10 +9,11 @@ interface Props {
   onChange: (v: string) => void;
   disabled?: boolean;
   label?: string; // accessible name when there's no <label for>
+  inline?: boolean; // borderless, inside another field
 }
 
 // Select is a drop-down list drawn by the page, not the browser.
-export function Select({ id, value, options, onChange, disabled, label }: Props) {
+export function Select({ id, value, options, onChange, disabled, label, inline }: Props) {
   const { anchor, toggle, close } = useFloating();
   const ref = useRef<HTMLButtonElement>(null);
   const isOpen = !!anchor && anchor === ref.current;
@@ -27,7 +28,7 @@ export function Select({ id, value, options, onChange, disabled, label }: Props)
     </div>
   ));
   return (
-    <button ref={ref} id={id} type="button" className={"select" + (isOpen ? " open" : "")} disabled={disabled || !options.length}
+    <button ref={ref} id={id} type="button" className={"select" + (inline ? " inline" : "") + (isOpen ? " open" : "")} disabled={disabled || !options.length}
       aria-haspopup="listbox" aria-expanded={isOpen} aria-label={label}
       onClick={(e) => openList(e.currentTarget)}
       onKeyDown={(e) => {

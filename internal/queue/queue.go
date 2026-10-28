@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"mailer/internal/maillog"
 	"mailer/internal/smtpclient"
 	"mailer/internal/users"
 )
@@ -58,6 +59,8 @@ type Queue struct {
 	client Deliverer
 	bounce BounceFunc
 	log    *log.Logger
+	// Mail records each recipient's final outcome.
+	Mail *maillog.Log
 
 	mu     sync.Mutex
 	active map[string]bool
@@ -229,10 +232,12 @@ func (q *Queue) attempt(ctx context.Context, it *Item) {
 				case res.Err == nil:
 					r.Status, r.LastError = StatusSent, ""
 					q.log.Printf("queue: %s delivered to %s", it.ID, r.Addr)
+					q.Mail.Add(maillog.Entry{Dir: maillog.Out, From: it.From, To: r.Addr, Size: len(data), Status: maillog.Sent})
 				case res.Permanent:
 					r.Status, r.LastError = StatusFailed, res.Err.Error()
 					newlyFailed = append(newlyFailed, r)
 					q.log.Printf("queue: %s permanently failed for %s: %v", it.ID, r.Addr, res.Err)
+					q.Mail.Add(maillog.Entry{Dir: maillog.Out, From: it.From, To: r.Addr, Size: len(data), Status: maillog.Bounced, Detail: r.LastError})
 				default:
 					r.LastError = res.Err.Error()
 					q.log.Printf("queue: %s deferred for %s: %v", it.ID, r.Addr, res.Err)
@@ -255,6 +260,7 @@ func (q *Queue) attempt(ctx context.Context, it *Item) {
 				r.Status = StatusFailed
 				r.LastError = "gave up after " + maxAge.String() + ": " + r.LastError
 				newlyFailed = append(newlyFailed, r)
+				q.Mail.Add(maillog.Entry{Dir: maillog.Out, From: it.From, To: r.Addr, Size: len(data), Status: maillog.Bounced, Detail: r.LastError})
 			}
 		}
 		pending = 0

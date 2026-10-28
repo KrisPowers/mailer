@@ -1,5 +1,5 @@
 import type {
-  Account, Aliases, Checks, ConnectResult, Credentials, Overview, QueueItem, Settings, SignIns, Step,
+  Account, Aliases, Checks, ConnectResult, Credentials, Locks, MailEntry, Overview, QueueItem, Settings, SignIns, Step,
   TailscaleResult,
 } from "./types";
 
@@ -30,6 +30,8 @@ export const api = {
   createAccount: (email: string, password: string) => call<Credentials>("POST", "/api/accounts", { email, password }),
   setPassword: (email: string, password: string) => call<Credentials>("POST", "/api/accounts/password", { email, password }),
   deleteAccount: (email: string) => call<{ ok: boolean }>("POST", "/api/accounts/delete", { email }),
+  setLocks: (email: string, locks: Locks) => call<Locks>("POST", "/api/accounts/locks", { email, ...locks }),
+  mail: () => call<MailEntry[]>("GET", "/api/mail"),
   aliases: () => call<Aliases>("GET", "/api/aliases"),
   saveAliases: (a: Aliases) => call<Aliases>("PUT", "/api/aliases", a),
   queue: () => call<QueueItem[]>("GET", "/api/queue"),

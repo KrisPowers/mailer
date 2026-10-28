@@ -22,7 +22,6 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
         <Icon name="mail" size={26} />
         <span>mailer</span>
       </a>
-      <span className="plan">{ov?.domain || "Not set up"}</span>
       <CommandSearch />
       <div className="header-icons">
         <IconButton icon="key" label="Mail app settings" onClick={() => open(<MailSettings />)} />
@@ -44,8 +43,7 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
 const PAGES: { view: View; label: string; icon: IconName }[] = [
   { view: "dashboard", label: "Dashboard", icon: "grid_view" },
   { view: "accounts", label: "Accounts", icon: "group" },
-  { view: "queue", label: "Outbound queue", icon: "outbox" },
-  { view: "signins", label: "Sign-ins", icon: "key" },
+  { view: "queue", label: "Queue", icon: "outbox" },
   { view: "logs", label: "Logs", icon: "terminal" },
   { view: "settings", label: "Settings", icon: "settings" },
 ];

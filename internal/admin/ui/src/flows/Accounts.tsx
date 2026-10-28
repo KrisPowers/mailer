@@ -3,10 +3,9 @@ import { api } from "../api";
 import { setupStep, useOverview } from "../overview";
 import { href } from "../router";
 import { Button } from "../ui/Button";
-import { Field, PasswordInput, TextInput } from "../ui/Field";
+import { AddressInput, Field, PasswordInput } from "../ui/Field";
 import { Icon } from "../ui/Icon";
 import { Modal, useModal } from "../ui/Modal";
-import { Select } from "../ui/Select";
 import { useCopy } from "../ui/Toast";
 import { Setup } from "./Setup";
 
@@ -30,11 +29,8 @@ export function NewAccount() {
       <Button variant="primary" disabled={!name.trim()} onClick={create}>Create</Button>
     </>}>
       <Field id="na-name" label="Address">
-        <TextInput id="na-name" autoFocus placeholder="name" value={name} onChange={setName} suffix={"@" + (domain || "…")} />
+        <AddressInput id="na-name" autoFocus name={name} onName={setName} domain={domain} domains={domains} onDomain={setDomain} />
       </Field>
-      {domains.length > 1 && (
-        <Field id="na-domain" label="Domain"><Select id="na-domain" value={domain} options={domains} onChange={setDomain} /></Field>
-      )}
       <Field id="na-pw" label="Password" hint="At least 10 characters. Leave empty to generate one.">
         <PasswordInput id="na-pw" value={password} onChange={setPassword} />
       </Field>
