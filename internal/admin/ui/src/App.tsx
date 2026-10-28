@@ -1,92 +1,94 @@
 import { useEffect, useRef, useState } from "react";
-import { FloatingProvider, useFloating } from "./components/Floating";
-import { ModalProvider, useModal } from "./components/Modal";
-import { ToastProvider } from "./components/Toasts";
+import { Setup } from "./flows/Setup";
 import { storage } from "./format";
 import { OverviewProvider, setupStep, useOverview } from "./overview";
-import { useView, type View } from "./router";
-import { Wizard } from "./setup/Wizard";
-import { SetupBanner } from "./shell/SetupBanner";
+import { Accounts } from "./pages/Accounts";
+import { Aliases } from "./pages/Aliases";
+import { Dashboard } from "./pages/Dashboard";
+import { Domains } from "./pages/Domains";
+import { Logs } from "./pages/Logs";
+import { Queue } from "./pages/Queue";
+import { Settings } from "./pages/Settings";
+import { SignIns } from "./pages/SignIns";
+import { useRoute } from "./router";
+import { Header } from "./shell/Header";
 import { Sidebar } from "./shell/Sidebar";
-import { Statusbar } from "./shell/Statusbar";
-import { Topbar } from "./shell/Topbar";
-import { Accounts } from "./views/Accounts";
-import { Aliases } from "./views/Aliases";
-import { Dashboard } from "./views/Dashboard";
-import { Domains } from "./views/Domains";
-import { Logs } from "./views/Logs";
-import { Queue } from "./views/Queue";
-import { Settings } from "./views/Settings";
-import { SignIns } from "./views/SignIns";
+import { StatusBar } from "./shell/Statusbar";
+import { FloatingProvider, useFloating } from "./ui/Floating";
+import { Icon } from "./ui/Icon";
+import { ModalProvider, useModal } from "./ui/Modal";
+import { ToastProvider } from "./ui/Toast";
+import { TooltipLayer } from "./ui/Tooltip";
 
-const PAGES: Record<View, () => React.JSX.Element> = {
-  dashboard: Dashboard,
-  domains: Domains,
-  accounts: Accounts,
-  aliases: Aliases,
-  queue: Queue,
-  signins: SignIns,
-  logs: Logs,
-  settings: Settings,
-};
-
-// Providers are nested so dialogs and menus can use overview data and toasts.
 export function App() {
   return (
     <ToastProvider>
       <OverviewProvider>
-        <ModalProvider>
-          <FloatingProvider>
+        <FloatingProvider>
+          <ModalProvider>
             <Shell />
-          </FloatingProvider>
-        </ModalProvider>
+            <TooltipLayer />
+          </ModalProvider>
+        </FloatingProvider>
       </OverviewProvider>
     </ToastProvider>
   );
 }
 
 function Shell() {
-  const view = useView();
+  const route = useRoute();
   const { ov, error } = useOverview();
   const { open } = useModal();
   const { close: closeFloating } = useFloating();
   const [navOpen, setNavOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => storage("mailer.nav") === "collapsed");
   const autoOpened = useRef(false);
+  const main = useRef<HTMLElement>(null);
 
   useEffect(() => {
     setNavOpen(false);
     closeFloating();
-  }, [view, closeFloating]);
+    main.current?.scrollTo(0, 0);
+  }, [route.view, route.param, closeFloating]);
 
-  // Open the wizard once per browser session while nothing is set up.
+  // Open setup once per browser session while nothing is set up.
   useEffect(() => {
     if (!ov || autoOpened.current) return;
     autoOpened.current = true;
     let shown = false;
     try {
-      shown = sessionStorage.getItem("mailer.wiz") === "1";
-      sessionStorage.setItem("mailer.wiz", "1");
+      shown = sessionStorage.getItem("mailer.setup") === "1";
+      sessionStorage.setItem("mailer.setup", "1");
     } catch {
       // storage unavailable
     }
-    if (setupStep(ov) === 1 && !shown) open(<Wizard />);
+    if (setupStep(ov) === 1 && !shown) open(<Setup />);
   }, [ov, open]);
 
-  const Page = PAGES[view];
+  const page = {
+    dashboard: <Dashboard />,
+    accounts: <Accounts param={route.param} />,
+    domains: <Domains />,
+    aliases: <Aliases />,
+    queue: <Queue />,
+    signins: <SignIns />,
+    logs: <Logs />,
+    settings: <Settings />,
+  }[route.view];
+
   return (
-    <div className={"shell" + (navOpen ? " nav-open" : "") + (collapsed ? " collapsed" : "")}>
-      <Topbar onToggleNav={() => setNavOpen(!navOpen)} />
-      <Sidebar view={view} onCollapse={() => {
+    <div className={"app" + (navOpen ? " nav-open" : "") + (collapsed ? " collapsed" : "")}>
+      <a className="skip" href="#main">Skip to content</a>
+      <Header onToggleNav={() => setNavOpen(!navOpen)} />
+      <Sidebar view={route.view} collapsed={collapsed} onCollapse={() => {
         storage("mailer.nav", collapsed ? "open" : "collapsed");
         setCollapsed(!collapsed);
       }} />
-      <main className="content">
-        {error && !ov && <div className="banner bad"><span>Can't reach the mail server: {error}</span></div>}
-        <SetupBanner />
-        <div className="view"><Page key={view} /></div>
+      <main className="main" id="main" ref={main} tabIndex={-1}>
+        {error && !ov && <div className="callout bad"><Icon name="error" /><span>Can't reach the mail server: {error}</span></div>}
+        <div className="page" key={route.view + route.param}>{page}</div>
       </main>
-      <Statusbar />
+      <StatusBar />
     </div>
   );
 }

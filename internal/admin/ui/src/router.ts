@@ -1,20 +1,28 @@
 import { useEffect, useState } from "react";
 
-export const VIEWS = ["dashboard", "domains", "accounts", "aliases", "queue", "signins", "logs", "settings"] as const;
+export const VIEWS = ["dashboard", "accounts", "domains", "aliases", "queue", "signins", "logs", "settings"] as const;
 export type View = (typeof VIEWS)[number];
 
-function current(): View {
-  const v = location.hash.slice(1);
-  return (VIEWS as readonly string[]).includes(v) ? (v as View) : "dashboard";
+export interface Route {
+  view: View;
+  param: string; // e.g. the address in #accounts/kris@example.com
 }
 
-// useView follows the URL hash, so views are linkable and Back works.
-export function useView(): View {
-  const [view, setView] = useState(current);
+function current(): Route {
+  const [v, ...rest] = decodeURIComponent(location.hash.slice(1)).split("/");
+  const view = (VIEWS as readonly string[]).includes(v) ? (v as View) : "dashboard";
+  return { view, param: view === v ? rest.join("/") : "" };
+}
+
+export const href = (view: View, param = "") => "#" + view + (param ? "/" + encodeURIComponent(param) : "");
+
+// useRoute follows the URL hash, so pages are linkable and Back works.
+export function useRoute(): Route {
+  const [route, setRoute] = useState(current);
   useEffect(() => {
-    const on = () => setView(current());
+    const on = () => setRoute(current());
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  return view;
+  return route;
 }

@@ -1,7 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import type { Health } from "./components/Badge";
 import type { Check, DomainStatus, Overview } from "./types";
+
+// Health is how a status reads: fine, needs a look, failing, or not known yet.
+export type Health = "ok" | "warn" | "bad" | "none";
 
 interface OverviewState {
   ov: Overview | null;
