@@ -132,7 +132,8 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host := strings.ToLower(hostOnly(r.Host))
-		public := s.Cfg.Get().DashboardHost()
+		cfg := s.Cfg.Get()
+		public := cfg.DashboardHost()
 		if !loopbackName(host) && (public == "" || host != public) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
