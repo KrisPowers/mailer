@@ -25,6 +25,37 @@ const iterations = 600_000
 type record struct {
 	Email string `json:"email"`
 	Hash  string `json:"hash"` // pbkdf2-sha256$iterations$salt$key
+	Locks
+}
+
+// Locks are an administrator's per-account switches. Each one stops one
+// thing and leaves the others working.
+type Locks struct {
+	Receive bool `json:"lock_receive,omitempty"` // incoming mail is refused
+	Send    bool `json:"lock_send,omitempty"`    // the account can't send
+	Login   bool `json:"lock_login,omitempty"`   // no mail app can sign in
+}
+
+// Locks returns an account's locks.
+func (db *DB) Locks(email string) Locks {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	if r, ok := db.users[strings.ToLower(email)]; ok {
+		return r.Locks
+	}
+	return Locks{}
+}
+
+func (db *DB) SetLocks(email string, l Locks) error {
+	email = strings.ToLower(email)
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	r, ok := db.users[email]
+	if !ok {
+		return fmt.Errorf("no such user %s", email)
+	}
+	r.Locks = l
+	return db.save()
 }
 
 // DB is a JSON-file-backed user database.
@@ -133,18 +164,25 @@ func (db *DB) List() []string {
 // doesn't reveal which accounts exist.
 var dummyHash, _ = hash("dummy-password-for-timing")
 
-// Authenticate returns the canonical address on success.
+// Authenticate returns the canonical address on success. An account whose
+// sign-in is locked never authenticates; LoginLocked tells callers why.
 func (db *DB) Authenticate(email, password string) (string, bool) {
 	email = strings.ToLower(strings.TrimSpace(email))
 	db.mu.RLock()
 	r, ok := db.users[email]
 	h := dummyHash
+	locked := false
 	if ok {
-		h = r.Hash
+		h, locked = r.Hash, r.Login
 	}
 	db.mu.RUnlock()
 	match := verify(h, password)
-	return email, ok && match
+	return email, ok && match && !locked
+}
+
+// LoginLocked reports whether email exists with its sign-in locked.
+func (db *DB) LoginLocked(email string) bool {
+	return db.Locks(strings.TrimSpace(email)).Login
 }
 
 func (db *DB) save() error {

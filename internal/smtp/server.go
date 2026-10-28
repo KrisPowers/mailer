@@ -424,6 +424,11 @@ func (s *session) auth(arg string) {
 		return
 	}
 	email, ok := s.srv.Users.Authenticate(user, pass)
+	if !ok && s.srv.Users.LoginLocked(user) {
+		s.audit(user, audit.Locked, "sign-in is locked for this account")
+		s.reply(535, "5.7.8", "authentication failed")
+		return
+	}
 	if !ok {
 		res, detail := audit.BadPassword, "wrong password"
 		if !s.srv.Users.Exists(user) {

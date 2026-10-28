@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"mailer/internal/maillog"
 	"mailer/internal/message"
 	"mailer/internal/smtp"
 )
@@ -47,21 +48,30 @@ func (m *MTA) InboundHandler() http.Handler {
 		}
 		data := message.NormalizeCRLF(body)
 		ip, helo, spf := relayInfo(data)
-		err = m.Receive(&InboundMessage{
+		msg := &InboundMessage{
 			RemoteIP: ip, Helo: helo,
 			From: strings.TrimSpace(r.Header.Get("X-Mail-From")),
 			To:   []string{rcpt}, Data: data,
 			Via: "Cloudflare Email Routing",
-		}, spf)
+		}
+		err = m.Receive(msg, spf)
+		entry := maillog.Entry{Dir: maillog.In, From: msg.From, To: rcpt, Size: len(data)}
 		var se *smtp.Error
 		switch {
 		case err == nil:
+			entry.Status = maillog.Delivered
+			if msg.Junk {
+				entry.Status = maillog.Junk
+			}
 			io.WriteString(w, "stored")
 		case errors.As(err, &se) && se.Code >= 500:
+			entry.Status, entry.Detail = maillog.Rejected, se.Msg
 			http.Error(w, se.Msg, 550)
 		default:
+			entry.Status, entry.Detail = maillog.Failed, err.Error()
 			http.Error(w, "temporary failure", http.StatusServiceUnavailable)
 		}
+		m.Mail.Add(entry)
 	})
 	return mux
 }

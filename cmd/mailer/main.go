@@ -29,6 +29,7 @@ import (
 	"mailer/internal/imap"
 	"mailer/internal/logbuf"
 	"mailer/internal/mailauth"
+	"mailer/internal/maillog"
 	"mailer/internal/mta"
 	"mailer/internal/queue"
 	"mailer/internal/smtp"
@@ -100,12 +101,14 @@ func serve(dataDir, listenHost string) error {
 	resolver := net.DefaultResolver
 	hostname := func() string { return cfgm.Get().Hostname }
 
-	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger}
+	mailLog := maillog.Open(filepath.Join(dataDir, "mail.log"))
+	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger, Mail: mailLog}
 	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger, CallbackHost: listenHost}
 	q, err := queue.New(filepath.Join(dataDir, "queue"), &cloudflare.Relay{Setup: setup}, m.Bounce, logger)
 	if err != nil {
 		return err
 	}
+	q.Mail = mailLog
 	m.Queue = q
 
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}

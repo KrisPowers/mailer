@@ -24,6 +24,7 @@ import (
 	"mailer/internal/config"
 	"mailer/internal/imap"
 	"mailer/internal/mailauth"
+	"mailer/internal/maillog"
 	"mailer/internal/mta"
 	"mailer/internal/queue"
 	"mailer/internal/smtp"
@@ -184,7 +185,8 @@ func TestEndToEnd(t *testing.T) {
 
 	st := store.New(filepath.Join(dir, "mail"))
 	lim := users.NewLimiter()
-	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: dns, Log: logger,
+	mailLog := maillog.Open(filepath.Join(dir, "mail.log"))
+	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: dns, Log: logger, Mail: mailLog,
 		DKIM: func(d string) *mailauth.Signer {
 			if d == "example.com" {
 				return signer
@@ -207,6 +209,7 @@ func TestEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	q.Mail = mailLog
 	m.Queue = q
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -352,6 +355,24 @@ func TestEndToEnd(t *testing.T) {
 	if out.From != "hello@example.com" || out.To[0] != "bob@other.net" {
 		t.Errorf("envelope %+v", out)
 	}
+	// A receive lock refuses mail for the account and its aliases.
+	db.SetLocks("me@example.com", users.Locks{Receive: true})
+	if code := post("hello@example.com", secret, msg("locked")); code != 550 {
+		t.Errorf("receive lock: got %d, want 550", code)
+	}
+	db.SetLocks("me@example.com", users.Locks{})
+
+	// The mail log has the received messages, the refusal and the send.
+	var log []string
+	for _, e := range mailLog.Recent() {
+		log = append(log, e.Dir+" "+e.Status+" "+e.To)
+	}
+	for _, want := range []string{"in rejected nobody@example.com", "in delivered hello@example.com", "out sent bob@other.net"} {
+		if !slices.Contains(log, want) {
+			t.Errorf("mail log missing %q: %q", want, log)
+		}
+	}
+
 	res := mailauth.VerifyDKIM(context.Background(), dns, out.Data)
 	if len(res) != 1 || res[0].Status != mailauth.DKIMPass {
 		t.Errorf("outbound DKIM: %+v", res)
