@@ -81,7 +81,7 @@ function Folders({ account: a }: { account: Account }) {
   return (
     <div className="table-wrap">
       <table className="table">
-        <thead><tr><th>Folder</th><th className="num">Messages</th><th className="num">Unread</th><th className="num">Size</th></tr></thead>
+        <thead><tr><th>Folder</th><th className="num">Messages</th><th className="num">Unread</th><th className="num grow">Size</th></tr></thead>
         <tbody>
           {(a.mailboxes ?? []).map((m) => (
             <tr key={m.name}>
@@ -103,7 +103,7 @@ function AccountSignIns({ email }: { email: string }) {
   return (
     <div className="table-wrap">
       <table className="table">
-        <thead><tr><th className="col-dot" /><th>Time</th><th>App</th><th>From</th><th>Result</th></tr></thead>
+        <thead><tr><th className="col-dot" /><th>Time</th><th>App</th><th>From</th><th className="grow">Result</th></tr></thead>
         <tbody>
           {error ? <EmptyRow cols={5} icon="error">{error}</EmptyRow>
             : !data ? <EmptyRow cols={5}>Loading…</EmptyRow>

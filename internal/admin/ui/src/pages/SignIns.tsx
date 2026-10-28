@@ -60,7 +60,7 @@ export function SignIns() {
         <Section title="Blocked addresses">
           <div className="table-wrap">
             <table className="table">
-              <thead><tr><th className="col-dot" /><th>Address</th><th>Blocked until</th><th className="col-actions">Actions</th></tr></thead>
+              <thead><tr><th className="col-dot" /><th>Address</th><th className="grow">Blocked until</th><th className="col-actions">Actions</th></tr></thead>
               <tbody>
                 {data.blocked.map((b) => (
                   <tr key={b.ip}>
@@ -89,7 +89,7 @@ export function SignIns() {
       <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr><th className="col-dot" /><th>Time</th><th>App</th><th>From</th><th>Account</th><th>Result</th><th className="col-actions">Actions</th></tr>
+            <tr><th className="col-dot" /><th>Time</th><th>App</th><th>From</th><th>Account</th><th className="grow">Result</th><th className="col-actions">Actions</th></tr>
           </thead>
           <tbody>
             {error ? <EmptyRow cols={7} icon="error">{error}</EmptyRow>

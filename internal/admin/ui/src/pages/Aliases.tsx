@@ -91,7 +91,7 @@ export function Aliases() {
                 <Checkbox label="Select all" checked={allPicked} mixed={!allPicked && list.some(([k]) => picked.has(k))}
                   onChange={(on) => setPicked(on ? new Set(list.map(([k]) => k)) : new Set())} />
               </th>
-              <th className="col-dot" /><th>Alias</th><th>Delivers to</th><th className="col-actions">Actions</th>
+              <th className="col-dot" /><th>Alias</th><th className="grow">Delivers to</th><th className="col-actions">Actions</th>
             </tr>
           </thead>
           <tbody>

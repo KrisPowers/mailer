@@ -86,7 +86,7 @@ export function Dashboard() {
       <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr><th className="col-dot" /><th>Check</th><th>Area</th><th>Result</th><th className="col-actions">Actions</th></tr>
+            <tr><th className="col-dot" /><th>Check</th><th>Area</th><th className="grow">Result</th><th className="col-actions">Actions</th></tr>
           </thead>
           <tbody>
             {!ov?.checks ? <EmptyRow cols={5}>Checking connections…</EmptyRow>
