@@ -29,7 +29,7 @@ COPY --from=tailscale /usr/local/bin/tailscale /usr/local/bin/tailscaled /usr/lo
 COPY --from=cloudflared /usr/local/bin/cloudflared /usr/local/bin/
 COPY --from=build /out/mailer /usr/local/bin/
 COPY docker/entrypoint.sh /entrypoint.sh
-ENV MAILER_DATA=/data MAILER_LISTEN=0.0.0.0 TS_HOSTNAME=mail
+ENV MAILER_DATA=/data MAILER_LISTEN=0.0.0.0
 VOLUME /data
 # Dashboard, and the Cloudflare sign-in callback.
 EXPOSE 8080 8877

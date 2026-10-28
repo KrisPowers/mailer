@@ -24,6 +24,7 @@ import (
 
 	"mailer/internal/admin"
 	"mailer/internal/audit"
+	"mailer/internal/auth"
 	"mailer/internal/cloudflare"
 	"mailer/internal/config"
 	"mailer/internal/imap"
@@ -34,6 +35,7 @@ import (
 	"mailer/internal/queue"
 	"mailer/internal/smtp"
 	"mailer/internal/store"
+	"mailer/internal/tailscale"
 	"mailer/internal/tunnel"
 	"mailer/internal/users"
 )
@@ -91,6 +93,10 @@ func serve(dataDir, listenHost string) error {
 	if err != nil {
 		return err
 	}
+	dashboardAuth, err := auth.Open(filepath.Join(dataDir, "auth.json"))
+	if err != nil {
+		return err
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -113,19 +119,18 @@ func serve(dataDir, listenHost string) error {
 
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}
 	adm := &admin.Server{Cfg: cfgm, Users: db, Store: st, Queue: q, MTA: m, Setup: setup,
-		Tunnel: runner, Logs: logs, Log: logger, Audit: signIns, Limiter: limiter}
+		Tunnel: runner, Logs: logs, Log: logger, Audit: signIns, Limiter: limiter, Auth: dashboardAuth}
 
 	sub := &smtp.Server{Hostname: hostname, Mode: smtp.ModeSubmission, Users: db, Limiter: limiter,
 		MaxSize: maxClientMessage, Backend: mta.Submission{MTA: m}, Log: logger, Audit: signIns}
 	im := &imap.Server{Hostname: hostname, Users: db, Store: st, Limiter: limiter,
 		MaxMessage: maxClientMessage, Log: logger, Audit: signIns}
-	// MAILER_TRACE=1 logs every mail app command, for debugging sign-in
-	// and sync problems.
-	sub.Trace = os.Getenv("MAILER_TRACE") == "1"
+	// Tracing every mail app command, and overriding the IMAP extensions
+	// advertised, are switched in the dashboard for debugging sign-in and
+	// sync problems, and apply to the next connection.
+	sub.Trace = func() bool { return cfgm.Get().Trace }
 	im.Trace = sub.Trace
-	// MAILER_IMAP_CAPS overrides the IMAP extensions advertised, to find
-	// which ones a mail app can't handle.
-	im.Caps = os.Getenv("MAILER_IMAP_CAPS")
+	im.Caps = func() string { return cfgm.Get().IMAPCaps }
 
 	// Mail ports listen on loopback only: the internet reaches them through
 	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients),
@@ -175,6 +180,11 @@ func serve(dataDir, listenHost string) error {
 		runner.Run(ctx, func() string { return cfgm.Get().Cloudflare.TunnelToken })
 		close(tunnelDone)
 	}()
+	// Once set up, Tailscale signs in (or reconnects) under the name and key
+	// saved in the dashboard; until then it waits.
+	if !dashboardAuth.NeedsSetup() {
+		tailscale.Up(ctx, cfg.Tailscale.Hostname, cfg.Tailscale.AuthKey, logger.Printf)
+	}
 	go adm.RunChecks(ctx)
 	go syncDNS(ctx, setup, cfgm, logger)
 	logger.Printf("mailer running; dashboard on port %d", cfg.Ports.Admin)

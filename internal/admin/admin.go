@@ -1,5 +1,7 @@
 // Package admin serves the web dashboard used to set up and manage the
-// server. The container publishes it on the host's loopback only.
+// server. The container publishes it on the host's loopback only, and it
+// can also be served through the Cloudflare Tunnel. Either way every API
+// call but the sign-in's needs a signed-in account on an approved device.
 package admin
 
 import (
@@ -22,6 +24,7 @@ import (
 	"time"
 
 	"mailer/internal/audit"
+	"mailer/internal/auth"
 	"mailer/internal/cloudflare"
 	"mailer/internal/config"
 	"mailer/internal/logbuf"
@@ -50,55 +53,87 @@ type Server struct {
 	// Sign-in attempts by mail apps, and the rate limit they count against.
 	Audit   *audit.Log
 	Limiter *users.Limiter
+	// Auth holds the dashboard's own accounts, devices and sessions.
+	Auth *auth.Store
 
 	mu     sync.Mutex
 	checks *Checks
 	signIn *signIn
+	limits limits
 }
 
 func (s *Server) Handler() http.Handler {
+	s.limits = newLimits()
 	mux := http.NewServeMux()
 	web, _ := fs.Sub(webFS, "web")
 	mux.Handle("GET /", http.FileServerFS(web))
 
-	mux.HandleFunc("GET /api/overview", s.overview)
-	mux.HandleFunc("POST /api/check", s.runChecksNow)
-	mux.HandleFunc("POST /api/cloudflare/signin", s.cloudflareSignIn)
-	mux.HandleFunc("POST /api/cloudflare/signin/wait", s.cloudflareSignInWait)
-	mux.HandleFunc("POST /api/cloudflare/connect", s.cloudflareConnect)
-	mux.HandleFunc("POST /api/tailscale/enable", s.tailscaleEnable)
-	mux.HandleFunc("GET /api/accounts", s.listAccounts)
-	mux.HandleFunc("POST /api/accounts", s.createAccount)
-	mux.HandleFunc("POST /api/accounts/password", s.resetPassword)
-	mux.HandleFunc("POST /api/accounts/delete", s.deleteAccount)
-	mux.HandleFunc("POST /api/accounts/locks", s.setLocks)
-	mux.HandleFunc("GET /api/aliases", s.getAliases)
-	mux.HandleFunc("PUT /api/aliases", s.putAliases)
-	mux.HandleFunc("GET /api/queue", s.getQueue)
-	mux.HandleFunc("GET /api/mail", s.getMail)
-	mux.HandleFunc("POST /api/queue/retry", s.retryQueue)
-	mux.HandleFunc("GET /api/logs", s.getLogs)
-	mux.HandleFunc("GET /api/signins", s.getSignIns)
-	mux.HandleFunc("POST /api/signins/unblock", s.unblock)
-	mux.HandleFunc("POST /api/signins/test", s.testSignIn)
-	mux.HandleFunc("GET /api/settings", s.getSettings)
-	mux.HandleFunc("PUT /api/settings", s.putSettings)
+	// Before signing in: what the page needs to show the setup, a device
+	// waiting for approval, or the sign-in.
+	mux.HandleFunc("GET /api/auth/status", s.public(s.authStatus))
+	mux.HandleFunc("POST /api/auth/device", s.public(s.newDevice))
+	mux.HandleFunc("POST /api/auth/setup", s.public(s.firstRun))
+	mux.HandleFunc("POST /api/auth/login", s.public(s.login))
+	mux.HandleFunc("POST /api/auth/refresh", s.public(s.refreshToken))
+	mux.HandleFunc("POST /api/auth/logout", s.public(s.logout))
+
+	api := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.signedIn(h)) }
+	api("GET /api/auth/me", s.me)
+	api("POST /api/auth/password", s.changePassword)
+	api("GET /api/auth/sessions", s.sessions)
+	api("POST /api/auth/sessions/end", s.endSession)
+	api("GET /api/auth/users", adminOnly(s.listUsers))
+	api("POST /api/auth/users", adminOnly(s.addUser))
+	api("POST /api/auth/users/password", adminOnly(s.setUserPassword))
+	api("POST /api/auth/users/role", adminOnly(s.setUserRole))
+	api("POST /api/auth/users/disable", adminOnly(s.setUserDisabled))
+	api("POST /api/auth/users/delete", adminOnly(s.deleteUser))
+	api("GET /api/auth/devices", adminOnly(s.listDevices))
+	api("POST /api/auth/devices/approve", adminOnly(s.approveDevice))
+	api("POST /api/auth/devices/rename", adminOnly(s.renameDevice))
+	api("POST /api/auth/devices/delete", adminOnly(s.removeDevice))
+	api("GET /api/server", adminOnly(s.getServer))
+	api("PUT /api/server", adminOnly(s.putServer))
+
+	api("GET /api/overview", s.overview)
+	api("POST /api/check", s.runChecksNow)
+	api("POST /api/cloudflare/signin", s.cloudflareSignIn)
+	api("POST /api/cloudflare/signin/wait", s.cloudflareSignInWait)
+	api("POST /api/cloudflare/connect", s.cloudflareConnect)
+	api("POST /api/tailscale/enable", s.tailscaleEnable)
+	api("GET /api/accounts", s.listAccounts)
+	api("POST /api/accounts", s.createAccount)
+	api("POST /api/accounts/password", s.resetPassword)
+	api("POST /api/accounts/delete", s.deleteAccount)
+	api("POST /api/accounts/locks", s.setLocks)
+	api("GET /api/aliases", s.getAliases)
+	api("PUT /api/aliases", s.putAliases)
+	api("GET /api/queue", s.getQueue)
+	api("GET /api/mail", s.getMail)
+	api("POST /api/queue/retry", s.retryQueue)
+	api("GET /api/logs", s.getLogs)
+	api("GET /api/signins", s.getSignIns)
+	api("POST /api/signins/unblock", s.unblock)
+	api("POST /api/signins/test", s.testSignIn)
+	api("GET /api/settings", s.getSettings)
+	api("PUT /api/settings", s.putSettings)
+	// Anything else under /api is refused, not answered with the page.
+	mux.HandleFunc("GET /api/", func(w http.ResponseWriter, r *http.Request) {
+		writeErr(w, 404, errors.New("not found"))
+	})
 	return s.guard(mux)
 }
 
-// guard rejects requests that didn't come from a page on this machine:
-// the Host header must be a loopback name (defeats DNS rebinding), and
-// state-changing requests must carry a custom header, which other sites
-// can't send cross-origin.
+// guard rejects requests for any name but a loopback one or the
+// dashboard's public address (defeats DNS rebinding), and state-changing
+// requests without a custom header, which other sites can't send
+// cross-origin. Until the first admin exists, the API answers this
+// computer only.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		host, _, err := net.SplitHostPort(r.Host)
-		if err != nil {
-			host = r.Host
-		}
-		switch host {
-		case "localhost", "127.0.0.1", "::1", "[::1]":
-		default:
+		host := strings.ToLower(hostOnly(r.Host))
+		public := s.Cfg.Get().DashboardHost()
+		if !loopbackName(host) && (public == "" || host != public) {
 			http.Error(w, "forbidden host", http.StatusForbidden)
 			return
 		}
@@ -106,9 +141,21 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			http.Error(w, "missing X-Mailer header", http.StatusForbidden)
 			return
 		}
-		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'")
-		w.Header().Set("Cache-Control", "no-store")
+		h := w.Header()
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; "+
+			"frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+		h.Set("Cache-Control", "no-store")
+		remote := !local(r)
+		if remote {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		if remote && strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/auth/status" && s.Auth.NeedsSetup() {
+			writeErr(w, 403, errors.New("finish setting up mailer on the computer running it first"))
+			return
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -217,7 +264,7 @@ func (s *Server) refresh(ctx context.Context) *Checks {
 		add("tailscale", "Tailscale", false, "Not installed", "Run Mailer from its container image, which includes Tailscale.")
 	case !ts.Running:
 		add("tailscale", "Tailscale", false, "Not signed in ("+orDash(ts.State)+")",
-			"Click Enable Funnel and sign in to Tailscale with the link it shows, or set TS_AUTHKEY for the container.")
+			"Click Enable Funnel and sign in to Tailscale with the link it shows, or add a Tailscale auth key in Settings, Server.")
 	default:
 		add("tailscale", "Tailscale", true, ts.DNSName, "")
 		add("tailscale", "Funnel for reading mail (IMAP :443)", ts.FunnelIMAP, ts.DNSName+":443",
@@ -328,7 +375,7 @@ type clientSettings struct {
 	SMTPServer string `json:"smtp_server"`
 	SMTPPort   int    `json:"smtp_port"`
 	// Set when sending goes through Cloudflare's relay, which takes its own
-	// sign-in. The dashboard is only reachable from this computer.
+	// sign-in. Only signed-in dashboard accounts see it.
 	SMTPUser     string `json:"smtp_user,omitempty"`
 	SMTPPassword string `json:"smtp_password,omitempty"`
 }
@@ -350,7 +397,18 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 			client.SMTPUser, client.SMTPPassword = config.RelayUser, cfg.Cloudflare.SMTPToken
 		}
 	}
+	// Admins see how many devices are waiting for them.
+	waiting := 0
+	if claimsOf(r).Role == auth.RoleAdmin {
+		for _, d := range s.Auth.Devices() {
+			if !d.Approved {
+				waiting++
+			}
+		}
+	}
 	writeJSON(w, map[string]any{
+		"pending_devices":  waiting,
+		"dashboard_host":   cfg.DashboardHost(),
 		"domain":           cfg.Domain(),
 		"domains":          cfg.Domains,
 		"hostname":         cfg.Hostname,
@@ -475,7 +533,7 @@ func (s *Server) tailscaleEnable(w http.ResponseWriter, r *http.Request) {
 		return
 	case !st.Running:
 		writeJSON(w, map[string]any{"error": "Tailscale isn't signed in and has no sign-in link yet (" + orDash(st.State) +
-			"). Wait a few seconds and click Enable again, or set TS_AUTHKEY for the container."})
+			"). Wait a few seconds and click Enable again, or add a Tailscale auth key in Settings, Server."})
 		return
 	}
 	err := tailscale.EnableFunnel(r.Context(), cfg.Ports.IMAP, cfg.Ports.Submission)

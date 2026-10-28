@@ -25,12 +25,6 @@
         Write-Host "Couldn't download compose.yaml: $_" -ForegroundColor Red
         return
     }
-    # Mail lives beside compose.yaml. An existing .env is left alone, so
-    # settings and keys put there survive updates.
-    $envFile = Join-Path $dir '.env'
-    if (-not (Test-Path $envFile)) {
-        [IO.File]::WriteAllText($envFile, "MAILER_DATA_DIR=./data`n")
-    }
 
     # Failures are caught by exit code: docker prints progress on stderr.
     docker compose -f $compose pull
@@ -39,6 +33,6 @@
     if ($LASTEXITCODE -ne 0) { Write-Host 'Starting Mailer failed.' -ForegroundColor Red; return }
 
     Write-Host ''
-    Write-Host 'Mailer is running. Open http://localhost:8080 to finish setup.' -ForegroundColor Green
-    Write-Host "Data and settings: $dir"
+    Write-Host 'Mailer is running. Open http://localhost:8080 on this computer to finish setup and make the admin account.' -ForegroundColor Green
+    Write-Host "Data and settings: $(Join-Path $env:LOCALAPPDATA 'mailer\data')"
 }
