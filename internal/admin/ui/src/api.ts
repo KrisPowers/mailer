@@ -1,24 +1,62 @@
+import { headers, refresh } from "./session";
 import type {
-  Account, Aliases, Checks, ConnectResult, Credentials, Locks, MailEntry, Overview, QueueItem, Settings, SignIns, Step,
-  TailscaleResult,
+  Account, Aliases, AuthStatus, Checks, ConnectResult, Credentials, DashUser, DeviceList, Locks, MailEntry, NewDevice, Overview,
+  QueueItem, ServerSettings, SessionList, Settings, SignIns, Step, TailscaleResult, Tokens,
 } from "./types";
 
-// Every request carries X-Mailer: the server refuses state changes without
-// it, which other sites can't send cross-origin.
-async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "X-Mailer": "1" };
-  const init: RequestInit = { method, headers };
+// Every request carries X-Mailer, which the server requires for state
+// changes and other sites can't send cross-origin, the device ID, and the
+// token once signed in. A request refused for an expired token is retried
+// once after refreshing it.
+async function call<T>(method: string, path: string, body?: unknown, retry = true): Promise<T> {
+  const h = headers();
+  const init: RequestInit = { method, headers: h };
   if (body !== undefined) {
-    headers["Content-Type"] = "application/json";
+    h["Content-Type"] = "application/json";
     init.body = JSON.stringify(body);
   }
   const r = await fetch(path, init);
+  if (r.status === 401 && retry && await refresh()) return call<T>(method, path, body, false);
   const data = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((data as { error?: string }).error || r.statusText);
   return data as T;
 }
 
+// Calls made before signing in, never retried.
+const pub = <T>(method: string, path: string, body?: unknown) => call<T>(method, path, body, false);
+
+export interface SetupRequest {
+  username: string;
+  password: string;
+  tailscale: { hostname: string; auth_key: string };
+  remote: { enabled: boolean; subdomain: string };
+}
+
 export const api = {
+  authStatus: () => pub<AuthStatus>("GET", "/api/auth/status"),
+  newDevice: () => pub<NewDevice>("POST", "/api/auth/device"),
+  setup: (req: SetupRequest) => pub<Tokens>("POST", "/api/auth/setup", req),
+  login: (username: string, password: string) => pub<Tokens>("POST", "/api/auth/login", { username, password }),
+  logout: () => pub<{ ok: boolean }>("POST", "/api/auth/logout"),
+  changePassword: (current: string, password: string) => call<{ ok: boolean }>("POST", "/api/auth/password", { current, password }),
+  sessions: () => call<SessionList>("GET", "/api/auth/sessions"),
+  endSession: (id: string) => call<{ ok: boolean }>("POST", "/api/auth/sessions/end", { id }),
+  users: () => call<DashUser[]>("GET", "/api/auth/users"),
+  addUser: (username: string, password: string, role: string) =>
+    call<{ user: DashUser; password: string }>("POST", "/api/auth/users", { username, password, role }),
+  setUserPassword: (username: string, password: string) =>
+    call<{ username: string; password: string }>("POST", "/api/auth/users/password", { username, password }),
+  setUserRole: (username: string, role: string) => call<{ ok: boolean }>("POST", "/api/auth/users/role", { username, role }),
+  setUserDisabled: (username: string, disabled: boolean) =>
+    call<{ ok: boolean }>("POST", "/api/auth/users/disable", { username, disabled }),
+  deleteUser: (username: string) => call<{ ok: boolean }>("POST", "/api/auth/users/delete", { username }),
+  devices: () => call<DeviceList>("GET", "/api/auth/devices"),
+  approveDevice: (key: string, name: string) => call<{ ok: boolean }>("POST", "/api/auth/devices/approve", { key, name }),
+  renameDevice: (key: string, name: string) => call<{ ok: boolean }>("POST", "/api/auth/devices/rename", { key, name }),
+  removeDevice: (key: string) => call<{ ok: boolean }>("POST", "/api/auth/devices/delete", { key }),
+  server: () => call<ServerSettings>("GET", "/api/server"),
+  saveServer: (s: ServerSettings) => call<ServerSettings>("PUT", "/api/server", s),
+
   overview: () => call<Overview>("GET", "/api/overview"),
   check: () => call<Checks>("POST", "/api/check"),
   signInCloudflare: () => call<ConnectResult & { url?: string }>("POST", "/api/cloudflare/signin"),

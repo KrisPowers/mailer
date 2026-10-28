@@ -41,3 +41,13 @@ export function storage(key: string, val?: string): string | null {
   }
   return null;
 }
+
+// browserOf names the browser and system in a user agent, like "Firefox on
+// Windows", for telling devices apart.
+export function browserOf(ua: string): string {
+  const browser = /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera" : /Firefox\//.test(ua) ? "Firefox"
+    : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : "";
+  const os = /Windows/.test(ua) ? "Windows" : /iPhone|iPad/.test(ua) ? "iOS" : /Android/.test(ua) ? "Android"
+    : /Mac OS X/.test(ua) ? "macOS" : /Linux/.test(ua) ? "Linux" : "";
+  return browser && os ? `${browser} on ${os}` : browser || os || "Unknown browser";
+}

@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Setup } from "./flows/Setup";
+import { Gate } from "./gate/Gate";
 import { OverviewProvider, setupStep, useOverview } from "./overview";
+import { Access } from "./pages/Access";
 import { Accounts } from "./pages/Accounts";
 import { Logs } from "./pages/Logs";
 import { Queue } from "./pages/Queue";
@@ -15,17 +17,21 @@ import { ModalProvider, useModal } from "./ui/Modal";
 import { ToastProvider } from "./ui/Toast";
 import { TooltipLayer } from "./ui/Tooltip";
 
+// Nothing past the Gate loads until this device is approved and someone
+// has signed in on it.
 export function App() {
   return (
     <ToastProvider>
-      <OverviewProvider>
-        <FloatingProvider>
-          <ModalProvider>
-            <Shell />
-            <TooltipLayer />
-          </ModalProvider>
-        </FloatingProvider>
-      </OverviewProvider>
+      <Gate>
+        <OverviewProvider>
+          <FloatingProvider>
+            <ModalProvider>
+              <Shell />
+            </ModalProvider>
+          </FloatingProvider>
+        </OverviewProvider>
+      </Gate>
+      <TooltipLayer />
     </ToastProvider>
   );
 }
@@ -60,6 +66,7 @@ function Shell() {
   }, [ov, open]);
 
   const page = {
+    access: <Access />,
     accounts: <Accounts param={route.param} />,
     queue: <Queue />,
     logs: <Logs />,

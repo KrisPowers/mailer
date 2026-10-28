@@ -5,8 +5,10 @@ import { NewAccount } from "../flows/Accounts";
 import { Setup } from "../flows/Setup";
 import { useOverview } from "../overview";
 import { href, type View } from "../router";
+import { signedOut, useUser } from "../session";
 import type { Account } from "../types";
-import { IconButton } from "../ui/Button";
+import { Button, IconButton } from "../ui/Button";
+import { PopoverButton } from "../ui/Floating";
 import { Icon, type IconName } from "../ui/Icon";
 import { useModal } from "../ui/Modal";
 import { useToast } from "../ui/Toast";
@@ -31,6 +33,7 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
           toast("Connections re-checked");
         }} />
         <a className="icon-btn" href={href("settings")} aria-label="Settings" data-tip="Settings"><Icon name="settings" /></a>
+        <UserMenu />
       </div>
       <button type="button" className="header-btn"
         onClick={() => open(ov?.domain ? <NewAccount /> : <Setup />)}>
@@ -40,15 +43,41 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
   );
 }
 
-const PAGES: { view: View; label: string; icon: IconName }[] = [
+// UserMenu shows who's signed in, and signs out.
+function UserMenu() {
+  const user = useUser();
+  if (!user) return null;
+  const signOut = async () => {
+    await api.logout().catch(() => {});
+    signedOut();
+  };
+  return (
+    <PopoverButton label={"Signed in as " + user.name} content={
+      <div className="popover-body user-pop">
+        <h3>{user.name}</h3>
+        <p className="muted">{user.role === "admin" ? "Admin" : "User"}</p>
+        <div className="user-pop-actions">
+          <a className="btn small" href={href("settings")}>Change password</a>
+          <Button small icon="logout" onClick={signOut}>Sign out</Button>
+        </div>
+      </div>
+    }>
+      <Icon name="person" />
+    </PopoverButton>
+  );
+}
+
+const PAGES: { view: View; label: string; icon: IconName; admin?: boolean }[] = [
   { view: "accounts", label: "Accounts", icon: "group" },
   { view: "queue", label: "Queue", icon: "outbox" },
   { view: "logs", label: "Logs", icon: "terminal" },
+  { view: "access", label: "Access", icon: "devices", admin: true },
   { view: "settings", label: "Settings", icon: "settings" },
 ];
 
 // CommandSearch finds pages and accounts; Ctrl+K focuses it.
 function CommandSearch() {
+  const admin = useUser()?.role === "admin";
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -68,7 +97,7 @@ function CommandSearch() {
 
   const query = q.trim().toLowerCase();
   const results = [
-    ...PAGES.filter((p) => p.label.toLowerCase().includes(query)).map((p) => ({ key: p.view, label: p.label, icon: p.icon, hint: "Page", to: href(p.view) })),
+    ...PAGES.filter((p) => (admin || !p.admin) && p.label.toLowerCase().includes(query)).map((p) => ({ key: p.view, label: p.label, icon: p.icon, hint: "Page", to: href(p.view) })),
     ...accounts.filter((a) => a.email.includes(query) || a.aliases.some((x) => x.includes(query)))
       .map((a) => ({ key: a.email, label: a.email, icon: "person" as IconName, hint: "Account", to: href("accounts", a.email) })),
   ].slice(0, 10);

@@ -5,22 +5,28 @@ import { Setup } from "../flows/Setup";
 import { useEnableTailscale } from "../flows/tailscale";
 import { fmtTime, plural } from "../format";
 import { statusOf, useOverview } from "../overview";
-import type { Settings as SettingsT } from "../types";
+import { href } from "../router";
+import { useUser } from "../session";
+import type { ServerSettings, Settings as SettingsT } from "../types";
 import { Button } from "../ui/Button";
-import { PasswordInput, Stepper } from "../ui/Field";
+import { Field, PasswordInput, Stepper, TextInput } from "../ui/Field";
 import { Icon, type IconName } from "../ui/Icon";
 import { useModal } from "../ui/Modal";
 import { Dot, PageHeader } from "../ui/Page";
 import { Toggle } from "../ui/Toggle";
 import { useToast } from "../ui/Toast";
 import { useLoad } from "../useLoad";
+import { SessionsTable } from "./Access";
 
-type Pane = "mail" | "sending" | "connections" | "about";
+type Pane = "mail" | "sending" | "connections" | "server" | "security" | "about";
 
-const PANES: [Pane, string, IconName][] = [
+// The last field marks a pane only admins see.
+const PANES: [Pane, string, IconName, boolean?][] = [
   ["mail", "Mail handling", "mail"],
   ["sending", "Sending", "send"],
   ["connections", "Connections", "lan"],
+  ["server", "Server", "dns", true],
+  ["security", "Security", "lock"],
   ["about", "About", "info"],
 ];
 
@@ -30,6 +36,7 @@ export function Settings() {
   const { data, error } = useLoad(api.settings);
   const [s, setS] = useState<SettingsT | null>(null);
   const [pane, setPane] = useState<Pane>("mail");
+  const admin = useUser()?.role === "admin";
   const toast = useToast();
 
   useEffect(() => { if (data) setS(data); }, [data]);
@@ -54,7 +61,7 @@ export function Settings() {
       <PageHeader title="Settings" />
       <div className="settings">
         <nav className="settings-nav" aria-label="Settings sections">
-          {PANES.map(([key, label, icon]) => (
+          {PANES.filter(([, , , adminOnly]) => admin || !adminOnly).map(([key, label, icon]) => (
             <button key={key} type="button" className={"nav-item" + (pane === key ? " active" : "")} aria-current={pane === key ? "page" : undefined}
               onClick={() => setPane(key)}>
               <Icon name={icon} /><span className="nav-label">{label}</span>
@@ -66,6 +73,8 @@ export function Settings() {
           {s && pane === "mail" && <MailPane s={s} put={put} />}
           {s && pane === "sending" && <SendingPane s={s} put={put} />}
           {pane === "connections" && <ConnectionsPane />}
+          {pane === "server" && admin && <ServerPane />}
+          {pane === "security" && <SecurityPane />}
           {pane === "about" && <AboutPane />}
         </div>
       </div>
@@ -172,16 +181,174 @@ function ConnectionsPane() {
   );
 }
 
+// ServerPane holds what used to be the container's environment: the
+// Tailscale name and key, remote access to this dashboard, and the
+// debugging switches. Each one saves on its own.
+function ServerPane() {
+  const { ov, reload } = useOverview();
+  const { data, error } = useLoad(api.server);
+  const [s, setS] = useState<ServerSettings | null>(null);
+  const [host, setHost] = useState("");
+  const [key, setKey] = useState("");
+  const [sub, setSub] = useState("");
+  const [caps, setCaps] = useState("");
+  const toast = useToast();
+
+  const load = (v: ServerSettings) => {
+    setS(v);
+    setHost(v.tailscale_hostname);
+    setSub(v.remote_subdomain);
+    setCaps(v.imap_caps);
+    setKey("");
+  };
+  useEffect(() => { if (data) load(data); }, [data]);
+
+  // save sends every field; the auth key only when it's being changed.
+  const save = async (patch: Partial<ServerSettings>) => {
+    if (!s) return;
+    const r = await api.saveServer({ ...s, auth_key: undefined, ...patch });
+    load(r);
+    reload();
+    toast(r.warning || "Settings saved", r.warning ? "bad" : "ok");
+  };
+
+  if (error) return <div className="callout bad"><Icon name="error" /><span>{error}</span></div>;
+  if (!s) return null;
+  return (
+    <>
+      <h2>Server</h2>
+      <p className="muted">What used to be set in the container's environment. It's kept in mailer's data folder.</p>
+      <div className="settings-list">
+        <div className="setting stacked">
+          <div className="setting-text">
+            <label htmlFor="ts-host"><b>Name on your tailnet</b></label>
+            <span className="muted">Mail apps connect to <code>{host.trim() || "name"}.your-tailnet.ts.net</code>, so changing it changes their server name.</span>
+          </div>
+          <div className="inline-form">
+            <TextInput id="ts-host" value={host} onChange={setHost} />
+            <Button variant="primary" disabled={host.trim() === s.tailscale_hostname} onClick={() => save({ tailscale_hostname: host.trim() })}>Save</Button>
+          </div>
+        </div>
+        <div className="setting stacked">
+          <div className="setting-text">
+            <label htmlFor="ts-key"><b>Tailscale auth key</b></label>
+            <span className="muted">Signs the server in to your tailnet by itself, without the link shown when enabling Funnel. It's never shown again once saved.</span>
+          </div>
+          <div className="inline-form">
+            <PasswordInput id="ts-key" value={key} onChange={setKey} placeholder={s.auth_key_set ? "Set; type a new one to replace it" : "Not set"} />
+            <Button variant="primary" disabled={!key.trim()} onClick={() => save({ auth_key: key.trim() })}>Save</Button>
+            {s.auth_key_set && <Button variant="danger" onClick={() => save({ auth_key: "" })}>Clear</Button>}
+          </div>
+        </div>
+        <div className="setting">
+          <Toggle checked={s.remote_enabled} onChange={(v) => save({ remote_enabled: v })} />
+          <div className="setting-text">
+            <b>Open the dashboard from anywhere</b>
+            <span className="muted">
+              {s.remote_enabled && ov?.dashboard_host
+                ? <>Served at <a href={"https://" + ov.dashboard_host} target="_blank" rel="noopener noreferrer">{ov.dashboard_host}</a> through the Cloudflare Tunnel. </>
+                : "Serves the dashboard through the Cloudflare Tunnel, on your primary domain. "}
+              Visitors still need a device an admin approved and an account an admin made.
+            </span>
+          </div>
+        </div>
+        <div className="setting stacked">
+          <div className="setting-text">
+            <label htmlFor="remote-sub"><b>Dashboard address</b></label>
+            <span className="muted">The name under your primary domain that the dashboard is served at.</span>
+          </div>
+          <div className="inline-form">
+            <div className="input address">
+              <input id="remote-sub" type="text" spellCheck={false} autoComplete="off" value={sub} onChange={(e) => setSub(e.target.value)} />
+              <span className="domain">.{ov?.domain || "your-domain"}</span>
+            </div>
+            <Button variant="primary" disabled={sub.trim() === s.remote_subdomain} onClick={() => save({ remote_subdomain: sub.trim() })}>Save</Button>
+          </div>
+        </div>
+        <div className="setting">
+          <Toggle checked={s.trace} onChange={(v) => save({ trace: v })} />
+          <div className="setting-text">
+            <b>Log every mail app command</b>
+            <span className="muted">For tracking down sign-in and sync problems. Passwords are hidden. Applies to new connections.</span>
+          </div>
+        </div>
+        <div className="setting stacked">
+          <div className="setting-text">
+            <label htmlFor="imap-caps"><b>IMAP extensions advertised</b></label>
+            <span className="muted">Empty uses the default set. Replace it to find an extension a mail app can't handle.</span>
+          </div>
+          <div className="inline-form">
+            <TextInput id="imap-caps" value={caps} onChange={setCaps} placeholder="Default" />
+            <Button variant="primary" disabled={caps.trim() === s.imap_caps} onClick={() => save({ imap_caps: caps.trim() })}>Save</Button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// SecurityPane changes the signed-in account's password. A user also sees
+// their sessions here; an admin sees everyone's under Access.
+function SecurityPane() {
+  const user = useUser();
+  const toast = useToast();
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  return (
+    <>
+      <h2>Security</h2>
+      <p className="muted">Signed in as <b>{user?.name}</b>, {user?.role === "admin" ? "an admin" : "a user"}.</p>
+      <div className="settings-list">
+        <div className="setting stacked">
+          <div className="setting-text">
+            <b>Change password</b>
+            <span className="muted">Signs this account out on every other device.</span>
+          </div>
+          <div className="password-form">
+            <Field id="cp-current" label="Current password">
+              <PasswordInput id="cp-current" value={current} onChange={setCurrent} autoComplete="current-password" />
+            </Field>
+            <Field id="cp-new" label="New password" hint="At least 12 characters.">
+              <PasswordInput id="cp-new" value={next} onChange={setNext} />
+            </Field>
+            <Field id="cp-again" label="New password again" hint={again && again !== next ? "The passwords don't match." : undefined}>
+              <PasswordInput id="cp-again" value={again} onChange={setAgain} />
+            </Field>
+            <div>
+              <Button variant="primary" disabled={!current || next.length < 12 || next !== again} onClick={async () => {
+                await api.changePassword(current, next);
+                setCurrent("");
+                setNext("");
+                setAgain("");
+                toast("Password changed");
+              }}>Change password</Button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {user?.role === "admin"
+        ? <p className="muted">Every account's sessions, and the devices allowed to sign in, are under <a href={href("access")}>Access</a>.</p>
+        : <><h2 className="pane-sub">Your sessions</h2><SessionsTable /></>}
+    </>
+  );
+}
+
 function AboutPane() {
+  const { ov } = useOverview();
   return (
     <>
       <h2>About</h2>
       <div className="settings-list">
         <div className="setting">
-          <Icon name="block" />
+          <Icon name="lock" />
           <div className="setting-text">
-            <b>Admin access</b>
-            <span className="muted">The container publishes this page on <code>{location.host}</code>, on this computer's loopback only, so other devices can't reach it.</span>
+            <b>Dashboard access</b>
+            <span className="muted">
+              The container publishes this page on this computer's loopback, <code>localhost:8080</code>
+              {ov?.dashboard_host && <>, and the Cloudflare Tunnel serves it at <code>{ov.dashboard_host}</code></>}.
+              Either way it takes a device an admin approved and a signed-in account.
+            </span>
           </div>
         </div>
         <div className="setting">
