@@ -15,8 +15,7 @@ export function Sidebar({ view }: { view: View }) {
     <nav className="sidebar" aria-label="Main">
       {item("dashboard", "grid_view", "Dashboard")}
       {item("accounts", "group", "Accounts", ov?.accounts)}
-      {item("queue", "outbox", "Outbound queue", ov?.queue)}
-      {item("signins", "key", "Sign-ins")}
+      {item("queue", "outbox", "Queue", ov?.queue)}
       {item("logs", "terminal", "Logs")}
     </nav>
   );

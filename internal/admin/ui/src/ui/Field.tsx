@@ -1,5 +1,6 @@
 import { forwardRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 import { Icon } from "./Icon";
+import { Select } from "./Select";
 
 // Field labels a control, with an optional hint under it.
 export function Field({ id, label, hint, children }: { id: string; label: string; hint?: ReactNode; children: ReactNode }) {
@@ -15,16 +16,38 @@ export function Field({ id, label, hint, children }: { id: string; label: string
 type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "onChange" | "value"> & {
   value: string;
   onChange: (v: string) => void;
-  suffix?: string;
 };
 
-export const TextInput = forwardRef<HTMLInputElement, InputProps>(function TextInput({ value, onChange, suffix, className, ...rest }, ref) {
-  const input = (
+export const TextInput = forwardRef<HTMLInputElement, InputProps>(function TextInput({ value, onChange, className, ...rest }, ref) {
+  return (
     <input ref={ref} type="text" spellCheck={false} autoComplete="off" {...rest} value={value}
-      className={suffix ? undefined : "input" + (className ? " " + className : "")} onChange={(e) => onChange(e.target.value)} />
+      className={"input" + (className ? " " + className : "")} onChange={(e) => onChange(e.target.value)} />
   );
-  return suffix ? <div className="input with-suffix">{input}<span>{suffix}</span></div> : input;
 });
+
+// AddressInput is one field for an address: the name typed in, then the
+// domain, picked right there when there's more than one.
+export function AddressInput({ id, name, onName, domain, domains, onDomain, placeholder = "name", autoFocus }: {
+  id?: string;
+  name: string;
+  onName: (v: string) => void;
+  domain: string;
+  domains: string[];
+  onDomain: (d: string) => void;
+  placeholder?: string;
+  autoFocus?: boolean;
+}) {
+  return (
+    <div className="input address">
+      <input id={id} type="text" spellCheck={false} autoComplete="off" autoFocus={autoFocus} placeholder={placeholder}
+        value={name} onChange={(e) => onName(e.target.value)} />
+      <span className="at">@</span>
+      {domains.length > 1
+        ? <Select inline value={domain} options={domains} onChange={onDomain} label="Domain" />
+        : <span className="domain">{domain}</span>}
+    </div>
+  );
+}
 
 // PasswordInput hides its value until the eye is clicked.
 export function PasswordInput({ value, onChange, id, placeholder, autoFocus }: {

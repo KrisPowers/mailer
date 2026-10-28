@@ -12,7 +12,7 @@ import { Confirm, useModal } from "../ui/Modal";
 import { Chip, Dot, EmptyRow, PageHeader } from "../ui/Page";
 import { useCopy, useToast } from "../ui/Toast";
 import { useLoad } from "../useLoad";
-import { AccountPage } from "./AccountPage";
+import { AccountPage, lockedText } from "./AccountPage";
 
 // Accounts is the table of mailboxes and nothing else; each row opens the
 // account's own page.
@@ -81,7 +81,7 @@ export function Accounts({ param }: { param: string }) {
                     <IconButton icon={expanded.has(a.email) ? "expand_more" : "chevron_right"} tone="accent"
                       label={expanded.has(a.email) ? "Hide folders" : "Show folders"} onClick={() => flip(a.email)} />
                   </td>
-                  <td className="col-dot"><Dot health="ok" label="Active" /></td>
+                  <td className="col-dot"><Dot health={lockedText(a.locks) ? "warn" : "ok"} label={lockedText(a.locks) || "Active"} /></td>
                   <td><a className="name-link" href={href("accounts", a.email)}>{a.email}</a></td>
                   <td>{a.aliases.length ? <Chip health="plain">{plural(a.aliases.length, "alias", "aliases")}</Chip> : <span className="muted">-</span>}</td>
                   <td className="num">{a.messages.toLocaleString()}</td>

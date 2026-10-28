@@ -3,7 +3,7 @@ import { api } from "../api";
 import { setupStep, useOverview } from "../overview";
 import type { ConnectResult, Overview, TailscaleResult } from "../types";
 import { Button } from "../ui/Button";
-import { Field, PasswordInput, TextInput } from "../ui/Field";
+import { AddressInput, Field, PasswordInput } from "../ui/Field";
 import { Icon } from "../ui/Icon";
 import { Modal, useModal } from "../ui/Modal";
 import { Steps } from "../ui/Page";
@@ -166,11 +166,8 @@ function AccountStep({ ov }: { ov: Overview }) {
     }}>Create account</Button>}>
       <p>Create the mailbox you'll use in Outlook or the Gmail app.</p>
       <Field id="su-name" label="Address">
-        <TextInput id="su-name" autoFocus placeholder="you" value={name} onChange={setName} suffix={"@" + domain} />
+        <AddressInput id="su-name" autoFocus placeholder="you" name={name} onName={setName} domain={domain} domains={ov.domains ?? []} onDomain={setDomain} />
       </Field>
-      {(ov.domains?.length ?? 0) > 1 && (
-        <Field id="su-domain" label="Domain"><Select id="su-domain" value={domain} options={ov.domains ?? []} onChange={setDomain} /></Field>
-      )}
       <Field id="su-pw" label="Password" hint="At least 10 characters. Leave empty to generate one.">
         <PasswordInput id="su-pw" value={password} onChange={setPassword} />
       </Field>
