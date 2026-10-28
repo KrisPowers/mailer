@@ -259,6 +259,9 @@ b, .strong { font-weight: 500; }
   background: transparent; color: var(--text); font: 400 14px var(--font);
 }
 .input { padding: 0 12px; }
+/* A box holding its own input pads nothing: the inner input carries the
+   padding and fills the box to its border. */
+.input.with-button { padding: 0; }
 .with-button, .search-field, .stepper { overflow: hidden; }
 .with-button input, .search-field input, .stepper input, .address input {
   flex: 1; min-width: 0; height: 100%; padding: 0 12px; border: 0; background: transparent; color: inherit; font: inherit; outline: none;
