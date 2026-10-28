@@ -43,7 +43,7 @@ export function Queue() {
       <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr><th className="col-dot" /><th>From</th><th>To</th><th>Status</th><th className="num">Attempts</th><th>Queued</th><th>Next try</th><th className="col-actions">Actions</th></tr>
+            <tr><th className="col-dot" /><th>From</th><th>To</th><th>Status</th><th className="num">Attempts</th><th>Queued</th><th className="grow">Next try</th><th className="col-actions">Actions</th></tr>
           </thead>
           <tbody>
             {error ? <EmptyRow cols={8} icon="error">{error}</EmptyRow>

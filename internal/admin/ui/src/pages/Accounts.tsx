@@ -94,7 +94,7 @@ export function Accounts({ param }: { param: string }) {
                   onChange={(on) => setPicked(on ? new Set(list.map((a) => a.email)) : new Set())} />
               </th>
               <th className="col-expand" /><th className="col-dot" />
-              <th>Name</th><th>Aliases</th><th className="num">Messages</th><th className="num">Unread</th><th className="num">Size</th>
+              <th>Name</th><th>Aliases</th><th className="num">Messages</th><th className="num">Unread</th><th className="num grow">Size</th>
               <th className="col-actions">Actions</th>
             </tr>
           </thead>

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import { Setup } from "./flows/Setup";
-import { storage } from "./format";
 import { OverviewProvider, setupStep, useOverview } from "./overview";
 import { Accounts } from "./pages/Accounts";
 import { Aliases } from "./pages/Aliases";
@@ -41,7 +40,6 @@ function Shell() {
   const { open } = useModal();
   const { close: closeFloating } = useFloating();
   const [navOpen, setNavOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(() => storage("mailer.nav") === "collapsed");
   const autoOpened = useRef(false);
   const main = useRef<HTMLElement>(null);
 
@@ -77,13 +75,10 @@ function Shell() {
   }[route.view];
 
   return (
-    <div className={"app" + (navOpen ? " nav-open" : "") + (collapsed ? " collapsed" : "")}>
+    <div className={"app" + (navOpen ? " nav-open" : "")}>
       <a className="skip" href="#main">Skip to content</a>
       <Header onToggleNav={() => setNavOpen(!navOpen)} />
-      <Sidebar view={route.view} collapsed={collapsed} onCollapse={() => {
-        storage("mailer.nav", collapsed ? "open" : "collapsed");
-        setCollapsed(!collapsed);
-      }} />
+      <Sidebar view={route.view} />
       <main className="main" id="main" ref={main} tabIndex={-1}>
         {error && !ov && <div className="callout bad"><Icon name="error" /><span>Can't reach the mail server: {error}</span></div>}
         <div className="page" key={route.view + route.param}>{page}</div>

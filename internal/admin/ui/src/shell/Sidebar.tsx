@@ -1,13 +1,11 @@
 import { useOverview } from "../overview";
 import { href, type View } from "../router";
-import { IconButton } from "../ui/Button";
 import { Icon, type IconName } from "../ui/Icon";
 
-export function Sidebar({ view, collapsed, onCollapse }: { view: View; collapsed: boolean; onCollapse: () => void }) {
+export function Sidebar({ view }: { view: View }) {
   const { ov } = useOverview();
   const item = (v: View, icon: IconName, label: string, count?: number) => (
-    <a href={href(v)} className={"nav-item" + (view === v ? " active" : "")} aria-current={view === v ? "page" : undefined}
-      data-tip={collapsed ? label : undefined}>
+    <a href={href(v)} className={"nav-item" + (view === v ? " active" : "")} aria-current={view === v ? "page" : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
       {!!count && <span className="nav-count">{count}</span>}
@@ -22,10 +20,6 @@ export function Sidebar({ view, collapsed, onCollapse }: { view: View; collapsed
       {item("queue", "outbox", "Outbound queue", ov?.queue)}
       {item("signins", "key", "Sign-ins")}
       {item("logs", "terminal", "Logs")}
-      <hr />
-      {item("settings", "settings", "Settings")}
-      <IconButton className="collapse" icon={collapsed ? "left_panel_open" : "left_panel_close"} label={collapsed ? "Expand menu" : "Collapse menu"}
-        tone="accent" onClick={onCollapse} />
     </nav>
   );
 }

@@ -65,7 +65,7 @@ export function Domains() {
       <div className="table-wrap">
         <table className="table">
           <thead>
-            <tr><th className="col-expand" /><th className="col-dot" /><th>Name</th><th>Records</th><th className="num">Accounts</th><th>Connected</th><th className="col-actions">Actions</th></tr>
+            <tr><th className="col-expand" /><th className="col-dot" /><th>Name</th><th>Records</th><th className="num">Accounts</th><th className="grow">Connected</th><th className="col-actions">Actions</th></tr>
           </thead>
           <tbody>
             {error ? <EmptyRow cols={7} icon="error">{error}</EmptyRow>
