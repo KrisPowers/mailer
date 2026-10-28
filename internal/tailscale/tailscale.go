@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -34,6 +35,36 @@ func run(ctx context.Context, args ...string) ([]byte, error) {
 	cmd.Stdout, cmd.Stderr = &out, &out
 	err = cmd.Run()
 	return out.Bytes(), err
+}
+
+var up struct {
+	sync.Mutex
+	cancel context.CancelFunc
+}
+
+// Up runs `tailscale up` in the background as hostname, signing in with
+// authKey when one is given. A node already signed in just reconnects; a
+// new one without a key waits for the sign-in link GetStatus reports.
+// Calling it again replaces a run still waiting.
+func Up(ctx context.Context, hostname, authKey string, logf func(string, ...any)) {
+	up.Lock()
+	if up.cancel != nil {
+		up.cancel()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	up.cancel = cancel
+	up.Unlock()
+	go func() {
+		defer cancel()
+		args := []string{"up", "--hostname=" + hostname, "--accept-dns=false"}
+		if authKey != "" {
+			args = append(args, "--auth-key="+authKey)
+		}
+		out, err := run(ctx, args...)
+		if err != nil && ctx.Err() == nil {
+			logf("tailscale: signing in as %s: %v %s", hostname, err, strings.TrimSpace(string(out)))
+		}
+	}()
 }
 
 type Status struct {

@@ -50,17 +50,18 @@ export function AddressInput({ id, name, onName, domain, domains, onDomain, plac
 }
 
 // PasswordInput hides its value until the eye is clicked.
-export function PasswordInput({ value, onChange, id, placeholder, autoFocus }: {
+export function PasswordInput({ value, onChange, id, placeholder, autoFocus, autoComplete = "new-password" }: {
   value: string;
   onChange: (v: string) => void;
   id?: string;
   placeholder?: string;
   autoFocus?: boolean;
+  autoComplete?: string;
 }) {
   const [shown, setShown] = useState(false);
   return (
     <div className="input with-button">
-      <input id={id} type={shown ? "text" : "password"} autoComplete="new-password" spellCheck={false} value={value}
+      <input id={id} type={shown ? "text" : "password"} autoComplete={autoComplete} spellCheck={false} value={value}
         placeholder={placeholder} autoFocus={autoFocus} onChange={(e) => onChange(e.target.value)} />
       <button type="button" className="icon-btn" aria-label={shown ? "Hide" : "Show"} data-tip={shown ? "Hide" : "Show"} onClick={() => setShown(!shown)}>
         <Icon name={shown ? "visibility_off" : "visibility"} size={18} />

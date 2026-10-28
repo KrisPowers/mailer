@@ -33,12 +33,12 @@ type Server struct {
 	MaxMessage   int64
 	Log          *log.Logger
 	Audit        *audit.Log
-	// Trace logs every line a client sends, and every command's result,
-	// with sign-in secrets hidden.
-	Trace bool
-	// Caps replaces the advertised extensions (DefaultCaps when empty).
+	// Trace, when it returns true, logs every line a client sends, and
+	// every command's result, with sign-in secrets hidden.
+	Trace func() bool
+	// Caps replaces the advertised extensions (DefaultCaps when nil or empty).
 	// Every extension in AllCaps works whether advertised or not.
-	Caps string
+	Caps func() string
 }
 
 // AllCaps lists every extension the server implements.
@@ -166,7 +166,10 @@ func (s *session) writef(format string, a ...any) {
 }
 
 func (s *session) caps() string {
-	c := s.srv.Caps
+	c := ""
+	if s.srv.Caps != nil {
+		c = s.srv.Caps()
+	}
 	if c == "" {
 		c = DefaultCaps
 	}
@@ -212,12 +215,12 @@ func (s *session) readCommand() ([]byte, error) {
 	for {
 		line, err := s.readLine()
 		if err != nil {
-			if s.srv.Trace {
+			if s.srv.Trace != nil && s.srv.Trace() {
 				s.srv.Log.Printf("imap trace %s: read ended: %v", s.ip, err)
 			}
 			return nil, err
 		}
-		if s.srv.Trace {
+		if s.srv.Trace != nil && s.srv.Trace() {
 			s.srv.Log.Printf("imap trace %s %s < %s", s.ip, s.user, traceLine(string(line)))
 		}
 		buf = append(buf, line...)
@@ -319,7 +322,7 @@ func (s *session) dispatch(tag, cmd string, argBytes []byte) (done bool) {
 	allowExpunge := uid || (cmd != "FETCH" && cmd != "STORE" && cmd != "SEARCH")
 	s.sync(allowExpunge)
 	s.writef("%s %s %s\r\n", tag, res.status, res.text)
-	if s.srv.Trace {
+	if s.srv.Trace != nil && s.srv.Trace() {
 		s.srv.Log.Printf("imap trace %s %s > %s %s %s", s.ip, s.user, tag, res.status, sanitize(res.text, 200))
 	}
 	return false

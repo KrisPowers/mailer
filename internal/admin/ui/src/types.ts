@@ -81,6 +81,8 @@ export interface Overview {
   last_inbound: string;
   connected_at: string;
   funnel_at: string;
+  pending_devices: number;
+  dashboard_host: string;
 }
 
 export interface Mailbox {
@@ -173,4 +175,82 @@ export interface SignIns {
 export interface Credentials {
   email: string;
   password: string;
+}
+
+// ---- dashboard sign-in ----
+
+export interface AuthStatus {
+  setup: boolean;
+  local: boolean;
+  device: { code: string; approved: boolean } | null;
+}
+
+export interface NewDevice {
+  id: string;
+  code: string;
+  approved: boolean;
+}
+
+export type Role = "admin" | "user";
+
+export interface DashUser {
+  name: string;
+  role: Role;
+  disabled: boolean;
+  created: string;
+  created_by?: string;
+  last_login?: string;
+}
+
+export interface Tokens {
+  token: string;
+  expires: string;
+  user: DashUser;
+}
+
+export interface Device {
+  key: string;
+  code: string;
+  approved: boolean;
+  name?: string;
+  agent: string;
+  ip: string;
+  first_seen: string;
+  last_seen: string;
+  approved_by?: string;
+  approved_at?: string;
+}
+
+export interface DeviceList {
+  current: string;
+  devices: Device[];
+}
+
+export interface SessionInfo {
+  id: string;
+  user: string;
+  device: string;
+  device_code: string;
+  device_name?: string;
+  ip: string;
+  agent: string;
+  created: string;
+  last_used: string;
+}
+
+export interface SessionList {
+  current: string;
+  sessions: SessionInfo[];
+}
+
+export interface ServerSettings {
+  tailscale_hostname: string;
+  auth_key_set: boolean;
+  auth_key?: string; // sent only to change it; "" clears it
+  remote_enabled: boolean;
+  remote_subdomain: string;
+  dashboard_host: string;
+  trace: boolean;
+  imap_caps: string;
+  warning?: string;
 }

@@ -1,9 +1,11 @@
 # Mailer in Docker. The installer (see README) runs it from the published
 # image; from a checkout, `docker compose up -d --build` builds it here.
-# Then open http://localhost:8080. Only this computer can reach the
-# dashboard: mail arrives through the Cloudflare Tunnel and mail apps
-# connect through Tailscale Funnel, both started from inside the container.
-# Settings and keys go in a .env file next to this one (see .env.example).
+# Then open http://localhost:8080 on this computer and finish the first-run
+# setup there: it makes the admin account and takes the Tailscale name and
+# key. There's no .env; every setting lives in the data folder.
+# Mail arrives through the Cloudflare Tunnel and mail apps connect through
+# Tailscale Funnel, both started from inside the container. The dashboard
+# can be served through the tunnel too (Settings, Server).
 name: mailer
 services:
   mailer:
@@ -15,22 +17,9 @@ services:
       - "127.0.0.1:8080:8080" # dashboard
       - "127.0.0.1:8877:8877" # Cloudflare sign-in comes back here
     volumes:
-      # Mail, accounts, keys and settings. MAILER_DATA_DIR picks the folder;
-      # otherwise it's %LOCALAPPDATA%\mailer\data on Windows and
-      # ./mailer/data elsewhere.
-      - ${MAILER_DATA_DIR:-${LOCALAPPDATA:-.}/mailer/data}:/data
-    environment:
-      # This server's name on your tailnet: mail apps connect to
-      # <TS_HOSTNAME>.<tailnet>.ts.net.
-      TS_HOSTNAME: ${TS_HOSTNAME:-mail}
-      # Optional: a Tailscale auth key signs in without the dashboard link.
-      TS_AUTHKEY: ${TS_AUTHKEY:-}
-      # 1 logs every command mail apps send (passwords hidden), for
-      # debugging sign-in and sync problems.
-      MAILER_TRACE: ${MAILER_TRACE:-0}
-      # Overrides the IMAP extensions advertised, for testing which ones a
-      # mail app can't handle. Empty means the default set.
-      MAILER_IMAP_CAPS: ${MAILER_IMAP_CAPS:-}
+      # Mail, accounts, keys and settings: %LOCALAPPDATA%\mailer\data on
+      # Windows, ./mailer/data next to this file elsewhere.
+      - ${LOCALAPPDATA:-.}/mailer/data:/data
     logging:
       options:
         max-size: 10m

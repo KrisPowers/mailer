@@ -198,6 +198,12 @@ func (db *DB) save() error {
 	return WriteFileAtomic(db.path, b, 0o600)
 }
 
+// HashPassword and VerifyPassword are the password hash, shared with the
+// dashboard's own accounts.
+func HashPassword(password string) (string, error) { return hash(password) }
+
+func VerifyPassword(encoded, password string) bool { return verify(encoded, password) }
+
 func hash(password string) (string, error) {
 	if len(password) < 10 {
 		return "", errors.New("password must be at least 10 characters")

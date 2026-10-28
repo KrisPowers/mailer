@@ -206,7 +206,8 @@ func (s *Setup) ensureTunnel(ctx context.Context, c *Client, acct, zoneID, host 
 	if token, err = c.TunnelToken(ctx, acct, tunnel.ID); err != nil {
 		return "", "", err
 	}
-	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, ingressHosts(host, domains), inboundService(cfg)); err != nil {
+	cfg.Domains = domains
+	if err := c.SetTunnelIngress(ctx, acct, tunnel.ID, ingressRules(cfg, host)); err != nil {
 		return "", "", err
 	}
 	on := true
@@ -224,48 +225,78 @@ func clientHosts(domain string) []string {
 	return []string{"autodiscover." + domain, "autoconfig." + domain}
 }
 
-// ingressHosts is everything the tunnel serves: the Worker's inbound
-// address and every domain's mail app settings names.
-func ingressHosts(inbound string, domains []string) []string {
-	hosts := []string{inbound}
-	for _, d := range domains {
-		hosts = append(hosts, clientHosts(d)...)
+// ingressRules is everything the tunnel serves: the Worker's inbound
+// address and every domain's mail app settings names go to the inbound
+// port, and the dashboard's address, when remote access is on, to the
+// dashboard.
+func ingressRules(cfg config.Config, inbound string) []IngressRule {
+	in := fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)
+	rules := []IngressRule{{inbound, in}}
+	for _, d := range cfg.Domains {
+		for _, h := range clientHosts(d) {
+			rules = append(rules, IngressRule{h, in})
+		}
 	}
-	return hosts
+	if h := cfg.DashboardHost(); h != "" {
+		rules = append(rules, IngressRule{h, fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)})
+	}
+	return rules
 }
 
-func inboundService(cfg config.Config) string {
-	return fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)
-}
-
-// syncClientHosts routes every domain's mail app settings names through
-// the tunnel, changing the tunnel's routes only when they differ.
+// syncClientHosts routes every domain's mail app settings names, and the
+// dashboard when remote access is on, through the tunnel, changing the
+// tunnel's routes only when they differ.
 func (s *Setup) syncClientHosts(ctx context.Context, c *Client, cfg config.Config) error {
 	cf := cfg.Cloudflare
-	want := ingressHosts(cf.InboundHost, cfg.Domains)
-	have, err := c.TunnelIngressHosts(ctx, cf.AccountID, cf.TunnelID)
+	want := ingressRules(cfg, cf.InboundHost)
+	have, err := c.TunnelIngress(ctx, cf.AccountID, cf.TunnelID)
 	if err != nil {
 		return err
 	}
 	if !slices.Equal(have, want) {
-		if err := c.SetTunnelIngress(ctx, cf.AccountID, cf.TunnelID, want, inboundService(cfg)); err != nil {
+		if err := c.SetTunnelIngress(ctx, cf.AccountID, cf.TunnelID, want); err != nil {
 			return err
 		}
 	}
 	on := true
+	cname := func(zoneID, h string) error {
+		if err := c.UpsertRecord(ctx, zoneID, Record{Type: "CNAME", Name: h,
+			Content: cf.TunnelID + ".cfargotunnel.com", TTL: 1, Proxied: &on}, nil); err != nil {
+			return fmt.Errorf("%s: %w", h, err)
+		}
+		return nil
+	}
 	for _, d := range cfg.Domains {
 		z, ok := cf.Zones[d]
 		if !ok {
 			continue
 		}
 		for _, h := range clientHosts(d) {
-			if err := c.UpsertRecord(ctx, z.ID, Record{Type: "CNAME", Name: h,
-				Content: cf.TunnelID + ".cfargotunnel.com", TTL: 1, Proxied: &on}, nil); err != nil {
-				return fmt.Errorf("%s: %w", h, err)
+			if err := cname(z.ID, h); err != nil {
+				return err
 			}
 		}
 	}
+	if h := cfg.DashboardHost(); h != "" {
+		if z, ok := cf.Zones[cfg.Domain()]; ok {
+			return cname(z.ID, h)
+		}
+	}
 	return nil
+}
+
+// SyncRoutes applies the tunnel's routes now, after remote access to the
+// dashboard is turned on or off.
+func (s *Setup) SyncRoutes(ctx context.Context) error {
+	cfg := s.Cfg.Get()
+	if !cfg.Connected() {
+		return nil
+	}
+	c, err := s.client(ctx)
+	if err != nil {
+		return err
+	}
+	return s.syncClientHosts(ctx, c, cfg)
 }
 
 // SyncZones connects every domain on the Cloudflare account that isn't

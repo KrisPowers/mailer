@@ -2,7 +2,10 @@
 
 Mailer runs as one Docker container: the mail server with its web dashboard,
 `cloudflared` for the Cloudflare Tunnel, and Tailscale for Funnel. Nothing on your
-router or computer is opened; the dashboard is published to `127.0.0.1` only.
+router or computer is opened; the dashboard is published to `127.0.0.1`, and
+served through the tunnel too when remote access is on. Either way it needs an
+approved device and a signed-in account (see
+[Configuration](configuration.md#dashboard-access)).
 
 ## What setup does
 

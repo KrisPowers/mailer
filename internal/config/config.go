@@ -36,6 +36,13 @@ type Config struct {
 	Cloudflare Cloudflare `json:"cloudflare"`
 	Tailscale  Tailscale  `json:"tailscale"`
 	Ports      Ports      `json:"ports"`
+	Remote     Remote     `json:"remote"`
+
+	// Trace logs every command mail apps send (passwords hidden), and
+	// IMAPCaps replaces the IMAP extensions advertised; both are for
+	// tracking down a mail app that misbehaves.
+	Trace    bool   `json:"trace,omitempty"`
+	IMAPCaps string `json:"imap_caps,omitempty"`
 }
 
 type Cloudflare struct {
@@ -76,6 +83,27 @@ type Zone struct {
 type Tailscale struct {
 	DNSName   string    `json:"dns_name"` // e.g. host.tailnet.ts.net
 	EnabledAt time.Time `json:"enabled_at"`
+	// Hostname is this server's name on the tailnet. AuthKey, when set,
+	// signs it in without the link the dashboard shows.
+	Hostname string `json:"hostname,omitempty"`
+	AuthKey  string `json:"auth_key,omitempty"`
+}
+
+// Remote serves the dashboard on <Subdomain>.<primary domain> through the
+// Cloudflare Tunnel, so it can be reached from anywhere. Signing in still
+// needs a device an admin approved.
+type Remote struct {
+	Enabled   bool   `json:"enabled"`
+	Subdomain string `json:"subdomain"`
+}
+
+// DashboardHost is the dashboard's public address, or "" when it's only
+// reachable from this computer.
+func (c *Config) DashboardHost() string {
+	if !c.Remote.Enabled || c.Remote.Subdomain == "" || c.Domain() == "" {
+		return ""
+	}
+	return c.Remote.Subdomain + "." + c.Domain()
 }
 
 // Ports are loopback-only listeners. Nothing listens publicly: Cloudflare
@@ -142,6 +170,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Aliases == nil {
 		c.Aliases = map[string]string{}
+	}
+	if c.Tailscale.Hostname == "" {
+		c.Tailscale.Hostname = "mail"
+	}
+	if c.Remote.Subdomain == "" {
+		c.Remote.Subdomain = "mail-admin"
 	}
 	if c.Ports.Admin == 0 {
 		c.Ports.Admin = 8080

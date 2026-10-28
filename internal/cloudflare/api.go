@@ -69,36 +69,36 @@ func (c *Client) TunnelToken(ctx context.Context, accountID, id string) (string,
 	return tok, err
 }
 
-// SetTunnelIngress routes each hostname to service and 404s everything else.
-func (c *Client) SetTunnelIngress(ctx context.Context, accountID, id string, hostnames []string, service string) error {
-	var rules []map[string]string
-	for _, h := range hostnames {
-		rules = append(rules, map[string]string{"hostname": h, "service": service})
-	}
-	rules = append(rules, map[string]string{"service": "http_status:404"})
-	body := map[string]any{"config": map[string]any{"ingress": rules}}
+// IngressRule routes a hostname through the tunnel to a local service.
+type IngressRule struct {
+	Hostname string `json:"hostname,omitempty"`
+	Service  string `json:"service"`
+}
+
+// SetTunnelIngress applies rules and 404s everything else.
+func (c *Client) SetTunnelIngress(ctx context.Context, accountID, id string, rules []IngressRule) error {
+	all := append(append([]IngressRule(nil), rules...), IngressRule{Service: "http_status:404"})
+	body := map[string]any{"config": map[string]any{"ingress": all}}
 	return c.do(ctx, "PUT", "/accounts/"+accountID+"/cfd_tunnel/"+id+"/configurations", body, nil)
 }
 
-// TunnelIngressHosts returns the hostnames the tunnel routes, in order.
-func (c *Client) TunnelIngressHosts(ctx context.Context, accountID, id string) ([]string, error) {
+// TunnelIngress returns the tunnel's hostname rules, in order.
+func (c *Client) TunnelIngress(ctx context.Context, accountID, id string) ([]IngressRule, error) {
 	var r struct {
 		Config struct {
-			Ingress []struct {
-				Hostname string `json:"hostname"`
-			} `json:"ingress"`
+			Ingress []IngressRule `json:"ingress"`
 		} `json:"config"`
 	}
 	if err := c.do(ctx, "GET", "/accounts/"+accountID+"/cfd_tunnel/"+id+"/configurations", nil, &r); err != nil {
 		return nil, err
 	}
-	var hosts []string
+	var rules []IngressRule
 	for _, rule := range r.Config.Ingress {
 		if rule.Hostname != "" {
-			hosts = append(hosts, rule.Hostname)
+			rules = append(rules, rule)
 		}
 	}
-	return hosts, nil
+	return rules, nil
 }
 
 // ---- DNS ----
