@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 import { api } from "./api";
-import type { Check, DomainStatus, Overview } from "./types";
+import type { Check, Overview } from "./types";
 
 // Health is how a status reads: fine, needs a look, failing, or not known yet.
 export type Health = "ok" | "warn" | "bad" | "none";
@@ -61,10 +61,6 @@ export function statusOf(ov: Overview | null): StatusSummary {
   };
   const out = health("sending");
   return { cf: health("cloudflare"), ts: health("tailscale"), out: out === "ok" && ov.queue ? "warn" : out };
-}
-
-export function domainOK(d: DomainStatus): boolean {
-  return !d.error && d.checks.length > 0 && d.checks.every((c) => c.ok);
 }
 
 // setupStep is the first unfinished setup step: 1 Cloudflare, 2 Tailscale,

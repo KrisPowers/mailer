@@ -48,13 +48,20 @@ func TestSignIn(t *testing.T) {
 	if cf.Token != "access-1" || cf.RefreshToken != "refresh-1" || time.Until(cf.TokenExpiry) < 50*time.Minute {
 		t.Fatalf("sign-in not saved: %+v", cf)
 	}
-	if zones, err := s.Zones(ctx); err != nil || len(zones) != 2 {
+	zones := func() ([]Zone, error) {
+		c, err := s.client(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return c.Zones(ctx)
+	}
+	if zones, err := zones(); err != nil || len(zones) != 2 {
 		t.Fatalf("zones with the sign-in: %v %v", zones, err)
 	}
 
 	// An expiring access token is renewed before use.
 	cfgm.Update(func(c *config.Config) { c.Cloudflare.TokenExpiry = time.Now() })
-	if _, err := s.Zones(ctx); err != nil {
+	if _, err := zones(); err != nil {
 		t.Fatal(err)
 	}
 	if cf := cfgm.Get().Cloudflare; cf.Token != "access-2" || cf.RefreshToken != "refresh-2" {

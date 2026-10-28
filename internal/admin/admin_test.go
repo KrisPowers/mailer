@@ -109,29 +109,3 @@ func TestAccounts(t *testing.T) {
 		t.Error("delete failed")
 	}
 }
-
-func TestDomains(t *testing.T) {
-	s := newServer(t)
-	s.Cfg.Update(func(c *config.Config) { c.Domains = append(c.Domains, "example.org") })
-	h := s.Handler()
-	hdr := map[string]string{"X-Mailer": "1"}
-
-	if code, out := do(t, h, "POST", "/api/accounts", `{"email":"kris@example.org"}`, hdr); code != 200 {
-		t.Fatalf("account on second domain: %d %v", code, out)
-	}
-	if code, _ := do(t, h, "POST", "/api/domains/remove", `{"domain":"example.com"}`, hdr); code != 400 {
-		t.Errorf("primary domain removed: %d", code)
-	}
-	if code, out := do(t, h, "POST", "/api/domains/remove", `{"domain":"example.org"}`, hdr); code != 200 {
-		t.Fatalf("remove: %d %v", code, out)
-	}
-
-	req := httptest.NewRequest("GET", "http://localhost:8080/api/domains", nil)
-	rr := httptest.NewRecorder()
-	h.ServeHTTP(rr, req)
-	var list []domainInfo
-	json.Unmarshal(rr.Body.Bytes(), &list)
-	if len(list) != 1 || list[0].Name != "example.com" || !list[0].Primary {
-		t.Errorf("domains: %s", rr.Body)
-	}
-}

@@ -46,6 +46,8 @@ type Setup struct {
 	CallbackHost string
 
 	mu sync.Mutex // one credential renewal at a time
+
+	zoneErrs map[string]string // last automatic-connect error per domain
 }
 
 const spfInclude = "include:_spf.mx.cloudflare.net"
@@ -266,13 +268,43 @@ func (s *Setup) syncClientHosts(ctx context.Context, c *Client, cfg config.Confi
 	return nil
 }
 
-// Zones lists the domains the saved sign-in or API token can see.
-func (s *Setup) Zones(ctx context.Context) ([]Zone, error) {
+// SyncZones connects every domain on the Cloudflare account that isn't
+// connected yet, so a domain added to Cloudflare starts receiving mail
+// without being added here. It runs once the first domain is set up. A
+// domain Cloudflare won't set up, such as one whose mail is with another
+// provider, is tried again on the next sync; its error is logged when it
+// changes.
+func (s *Setup) SyncZones(ctx context.Context) error {
+	cfg := s.Cfg.Get()
+	if !cfg.Connected() {
+		return nil
+	}
 	c, err := s.client(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return c.Zones(ctx)
+	zones, err := c.Zones(ctx)
+	if err != nil {
+		return err
+	}
+	if s.zoneErrs == nil {
+		s.zoneErrs = map[string]string{}
+	}
+	for _, z := range zones {
+		name := strings.ToLower(z.Name)
+		if _, ok := cfg.Cloudflare.Zones[name]; ok {
+			continue
+		}
+		msg := ""
+		if _, err := s.Connect(ctx, name); err != nil {
+			msg = err.Error()
+		}
+		if msg != "" && msg != s.zoneErrs[name] {
+			s.Log.Printf("cloudflare: couldn't connect %s automatically: %s", name, msg)
+		}
+		s.zoneErrs[name] = msg
+	}
+	return nil
 }
 
 // Disconnect stops receiving mail for a secondary domain: its catch-all

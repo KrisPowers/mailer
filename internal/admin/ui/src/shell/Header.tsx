@@ -44,7 +44,6 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
 const PAGES: { view: View; label: string; icon: IconName }[] = [
   { view: "dashboard", label: "Dashboard", icon: "grid_view" },
   { view: "accounts", label: "Accounts", icon: "group" },
-  { view: "domains", label: "Domains", icon: "language" },
   { view: "aliases", label: "Aliases", icon: "alternate_email" },
   { view: "queue", label: "Outbound queue", icon: "outbox" },
   { view: "signins", label: "Sign-ins", icon: "key" },
