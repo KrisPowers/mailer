@@ -1,7 +1,10 @@
 # Runtime data: mail, accounts, keys, settings (contains your Cloudflare token)
 mailer-data/
+/data/
 # Built binary, and the data folder compose.yaml uses where LOCALAPPDATA isn't set
 /mailer
+# Local settings and keys for compose.yaml (see .env.example)
+.env
 # Desktop app builds from before the container
 /builds/
 # Windows icon resources the desktop build generated
