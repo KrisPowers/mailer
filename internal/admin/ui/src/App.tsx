@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { Setup } from "./flows/Setup";
 import { OverviewProvider, setupStep, useOverview } from "./overview";
 import { Accounts } from "./pages/Accounts";
-import { Aliases } from "./pages/Aliases";
 import { Dashboard } from "./pages/Dashboard";
 import { Logs } from "./pages/Logs";
 import { Queue } from "./pages/Queue";
@@ -65,7 +64,6 @@ function Shell() {
   const page = {
     dashboard: <Dashboard />,
     accounts: <Accounts param={route.param} />,
-    aliases: <Aliases />,
     queue: <Queue />,
     signins: <SignIns />,
     logs: <Logs />,
