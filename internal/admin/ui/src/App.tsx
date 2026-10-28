@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import { FloatingProvider, useFloating } from "./components/Floating";
 import { ModalProvider, useModal } from "./components/Modal";
 import { ToastProvider } from "./components/Toasts";
+import { storage } from "./format";
 import { OverviewProvider, setupStep, useOverview } from "./overview";
 import { useView, type View } from "./router";
 import { Wizard } from "./setup/Wizard";
 import { SetupBanner } from "./shell/SetupBanner";
 import { Sidebar } from "./shell/Sidebar";
+import { Statusbar } from "./shell/Statusbar";
 import { Topbar } from "./shell/Topbar";
 import { Accounts } from "./views/Accounts";
 import { Aliases } from "./views/Aliases";
@@ -49,6 +51,7 @@ function Shell() {
   const { open } = useModal();
   const { close: closeFloating } = useFloating();
   const [navOpen, setNavOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => storage("mailer.nav") === "collapsed");
   const autoOpened = useRef(false);
 
   useEffect(() => {
@@ -72,14 +75,18 @@ function Shell() {
 
   const Page = PAGES[view];
   return (
-    <div className={"shell" + (navOpen ? " nav-open" : "")}>
+    <div className={"shell" + (navOpen ? " nav-open" : "") + (collapsed ? " collapsed" : "")}>
       <Topbar onToggleNav={() => setNavOpen(!navOpen)} />
-      <Sidebar view={view} />
+      <Sidebar view={view} onCollapse={() => {
+        storage("mailer.nav", collapsed ? "open" : "collapsed");
+        setCollapsed(!collapsed);
+      }} />
       <main className="content">
         {error && !ov && <div className="banner bad"><span>Can't reach the mail server: {error}</span></div>}
         <SetupBanner />
         <div className="view"><Page key={view} /></div>
       </main>
+      <Statusbar />
     </div>
   );
 }
