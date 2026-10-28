@@ -114,7 +114,7 @@ function CloudflareStep({ ov, advance }: StepProps) {
     <Frame ov={ov} current={1} action={<Button variant="primary" onClick={run}>{zones ? "Use this domain" : "Connect Cloudflare"}</Button>}>
       <p>Cloudflare receives mail for your domain and hands it to this server, and sends your replies. Connect your Cloudflare account and mailer sets up the rest.</p>
       {zones && (
-        <Field id="cf-zone" label="Which domain first?" hint="Add the others later on the Domains page.">
+        <Field id="cf-zone" label="Which domain first?" hint="Every other domain on the account is connected by itself afterwards.">
           <Select id="cf-zone" value={zone} options={zones} onChange={setZone} />
         </Field>
       )}

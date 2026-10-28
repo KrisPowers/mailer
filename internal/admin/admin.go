@@ -65,9 +65,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/cloudflare/signin", s.cloudflareSignIn)
 	mux.HandleFunc("POST /api/cloudflare/signin/wait", s.cloudflareSignInWait)
 	mux.HandleFunc("POST /api/cloudflare/connect", s.cloudflareConnect)
-	mux.HandleFunc("GET /api/cloudflare/zones", s.cloudflareZones)
-	mux.HandleFunc("GET /api/domains", s.listDomains)
-	mux.HandleFunc("POST /api/domains/remove", s.removeDomain)
 	mux.HandleFunc("POST /api/tailscale/enable", s.tailscaleEnable)
 	mux.HandleFunc("GET /api/accounts", s.listAccounts)
 	mux.HandleFunc("POST /api/accounts", s.createAccount)
@@ -460,76 +457,6 @@ func (s *Server) connect(ctx context.Context, zone string) map[string]any {
 	}
 	go s.refresh(context.Background())
 	return resp
-}
-
-type zoneInfo struct {
-	Name      string `json:"name"`
-	Connected bool   `json:"connected"`
-}
-
-// cloudflareZones lists the domains the Cloudflare account has, for adding one.
-func (s *Server) cloudflareZones(w http.ResponseWriter, r *http.Request) {
-	cfg := s.Cfg.Get()
-	zones, err := s.Setup.Zones(r.Context())
-	if err != nil {
-		writeErr(w, 502, err)
-		return
-	}
-	out := []zoneInfo{}
-	for _, z := range zones {
-		out = append(out, zoneInfo{z.Name, cfg.IsLocalDomain(z.Name)})
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	writeJSON(w, out)
-}
-
-type domainInfo struct {
-	Name        string                   `json:"name"`
-	Primary     bool                     `json:"primary"`
-	AccountID   string                   `json:"account_id"`
-	ConnectedAt time.Time                `json:"connected_at"`
-	Accounts    int                      `json:"accounts"`
-	Status      *cloudflare.DomainStatus `json:"status"`
-}
-
-func (s *Server) listDomains(w http.ResponseWriter, r *http.Request) {
-	cfg := s.Cfg.Get()
-	checks := s.currentChecks()
-	accts := s.Users.List()
-	out := []domainInfo{}
-	for i, d := range cfg.Domains {
-		z := cfg.Cloudflare.Zones[d]
-		di := domainInfo{Name: d, Primary: i == 0, AccountID: z.AccountID, ConnectedAt: z.ConnectedAt}
-		for _, u := range accts {
-			if strings.HasSuffix(u, "@"+d) {
-				di.Accounts++
-			}
-		}
-		if checks != nil {
-			for _, ds := range checks.Cloudflare.Domains {
-				if ds.Name == d {
-					di.Status = &ds
-				}
-			}
-		}
-		out = append(out, di)
-	}
-	writeJSON(w, out)
-}
-
-func (s *Server) removeDomain(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Domain string }
-	if err := readJSON(r, &req); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	warning, err := s.Setup.Disconnect(r.Context(), req.Domain)
-	if err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	go s.refresh(context.Background())
-	writeJSON(w, map[string]any{"ok": true, "warning": warning})
 }
 
 func (s *Server) tailscaleEnable(w http.ResponseWriter, r *http.Request) {

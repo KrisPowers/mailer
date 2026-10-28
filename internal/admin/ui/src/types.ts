@@ -116,20 +116,6 @@ export interface QueueItem {
   attempts: number;
 }
 
-export interface DomainInfo {
-  name: string;
-  primary: boolean;
-  account_id: string;
-  connected_at: string;
-  accounts: number;
-  status: DomainStatus | null;
-}
-
-export interface Zone {
-  name: string;
-  connected: boolean;
-}
-
 export interface Settings {
   reject_dmarc_failures: boolean;
   save_sent_copy: boolean;

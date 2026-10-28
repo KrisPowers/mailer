@@ -25,11 +25,12 @@ router or computer is opened; the dashboard is published to this computer only.
      sets everything up by itself.
    - **Tailscale → Enable**. The first time it shows a link to sign this server in
      to your tailnet, then one to allow Funnel; click Enable again after each.
-   - **Accounts → Create account**
-   - more domains: **Domains → Add domain** (any domain on your Cloudflare account)
+   - **New account** (top right)
 
-The dashboard then shows the server address and ports to enter in Outlook or the
-Gmail app. The container restarts by itself with Docker.
+Every other domain on the Cloudflare account is connected by itself, at startup and
+every 10 minutes, including domains added to Cloudflare later. Each account's page
+lists the settings to enter in Outlook or the Gmail app. The container restarts by
+itself with Docker.
 
 Set `TS_AUTHKEY` (a [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys))
 before starting to sign Tailscale in without the link. `TS_HOSTNAME` in
@@ -71,18 +72,19 @@ wait in the **Outbound queue** and are retried for four days.
 
 ## The dashboard
 
-The **Overview** page shows the connection checks (tunnel, Email Routing, inbound path,
-Funnel, IMAP reachability, Email Sending) and your client settings. The other pages:
+Laid out after Docker Desktop. The header has search (Ctrl+K), mail app settings,
+re-check, settings and **New account**; the status bar along the bottom shows whether
+the server is running and how many checks need attention.
 
 | Page | What it's for |
 |---|---|
-| **Domains** | Add and remove domains; per-domain Email Routing, catch-all, MX, SPF, DKIM and DMARC checks read from Cloudflare's API; repair |
-| **Accounts** | Create accounts, see per-account mail counts and sizes, reset passwords, delete accounts |
+| **Dashboard** | Key figures and every connection check (tunnel, each domain's Email Routing, MX, SPF, DKIM and DMARC, inbound path, Funnel, Email Sending), with a fix and an action beside anything failing |
+| **Accounts** | Accounts with mail counts and sizes; each account's page has its IMAP and SMTP settings (copy all, print), folders and sign-ins |
 | **Aliases** | Extra addresses and a catch-all per domain |
 | **Outbound queue** | Messages waiting to send; retry them |
 | **Sign-ins** | Every sign-in attempt by a mail app, why it failed, addresses blocked for too many failures, and a test sign-in |
 | **Logs** | Recent server activity |
-| **Settings** | DMARC strictness, saving sent copies, max message size, re-running Cloudflare setup |
+| **Settings** (gear, top right) | DMARC strictness, saved sent copies, message size, the Cloudflare SMTP token, Cloudflare and Tailscale connections |
 
 `compose.yaml` publishes the dashboard on 127.0.0.1 only, so it can only be reached
 from the computer running Docker.

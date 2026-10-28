@@ -187,12 +187,15 @@ func serve(dataDir, listenHost string) error {
 	return nil
 }
 
-// syncDNS keeps every domain's SPF record and mail app settings names in
-// place in Cloudflare.
+// syncDNS connects every domain on the Cloudflare account and keeps each
+// one's SPF record and mail app settings names in place.
 func syncDNS(ctx context.Context, setup *cloudflare.Setup, cfgm *config.Manager, logger *log.Logger) {
 	for {
 		if cfg := cfgm.Get(); cfg.Connected() {
-			c, cancel := context.WithTimeout(ctx, time.Minute)
+			c, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			if err := setup.SyncZones(c); err != nil {
+				logger.Printf("cloudflare: listing domains: %v", err)
+			}
 			if err := setup.SyncDNS(c); err != nil {
 				logger.Printf("dns: %v", err)
 			}

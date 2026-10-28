@@ -1,6 +1,6 @@
 import type {
-  Account, Aliases, Checks, ConnectResult, Credentials, DomainInfo, Overview, QueueItem, Settings, SignIns, Step,
-  TailscaleResult, Zone,
+  Account, Aliases, Checks, ConnectResult, Credentials, Overview, QueueItem, Settings, SignIns, Step,
+  TailscaleResult,
 } from "./types";
 
 // Every request carries X-Mailer: the server refuses state changes without
@@ -25,9 +25,6 @@ export const api = {
   signInCloudflareWait: () => call<ConnectResult>("POST", "/api/cloudflare/signin/wait"),
   connectCloudflare: (token: string, zone: string) =>
     call<ConnectResult>("POST", "/api/cloudflare/connect", { token, zone }),
-  zones: () => call<Zone[]>("GET", "/api/cloudflare/zones"),
-  domains: () => call<DomainInfo[]>("GET", "/api/domains"),
-  removeDomain: (domain: string) => call<{ ok: boolean; warning: string }>("POST", "/api/domains/remove", { domain }),
   enableTailscale: () => call<TailscaleResult>("POST", "/api/tailscale/enable"),
   accounts: () => call<Account[]>("GET", "/api/accounts"),
   createAccount: (email: string, password: string) => call<Credentials>("POST", "/api/accounts", { email, password }),

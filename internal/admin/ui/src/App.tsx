@@ -4,7 +4,6 @@ import { OverviewProvider, setupStep, useOverview } from "./overview";
 import { Accounts } from "./pages/Accounts";
 import { Aliases } from "./pages/Aliases";
 import { Dashboard } from "./pages/Dashboard";
-import { Domains } from "./pages/Domains";
 import { Logs } from "./pages/Logs";
 import { Queue } from "./pages/Queue";
 import { Settings } from "./pages/Settings";
@@ -66,7 +65,6 @@ function Shell() {
   const page = {
     dashboard: <Dashboard />,
     accounts: <Accounts param={route.param} />,
-    domains: <Domains />,
     aliases: <Aliases />,
     queue: <Queue />,
     signins: <SignIns />,

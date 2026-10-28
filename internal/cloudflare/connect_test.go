@@ -211,6 +211,42 @@ func (f *fakeCF) find(zone, typ, name string) []Record {
 	return out
 }
 
+// Once one domain is set up, every other domain on the account is
+// connected by itself.
+func TestSyncZones(t *testing.T) {
+	fake := newFake()
+	srv := httptest.NewServer(fake)
+	defer srv.Close()
+	apiBase = srv.URL
+
+	cfgm, err := config.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Setup{Cfg: cfgm, Log: log.New(io.Discard, "", 0),
+		DKIMRecord: func(d string) (string, error) { return "v=DKIM1; k=rsa; p=KEY-" + d, nil }}
+	ctx := context.Background()
+	s.UseToken("good-token")
+	if err := s.SyncZones(ctx); err != nil || len(cfgm.Get().Domains) != 0 {
+		t.Fatalf("synced before the first domain was set up: %v %v", err, cfgm.Get().Domains)
+	}
+	if _, err := s.Connect(ctx, "example.com"); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := s.SyncZones(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := cfgm.Get()
+	if !slices.Equal(cfg.Domains, []string{"example.com", "example.org"}) || cfg.Domain() != "example.com" {
+		t.Errorf("domains after sync: %v", cfg.Domains)
+	}
+	if fake.catchAll["z2"] != workerName || len(fake.sending["z2"]) != 1 || fake.tunnels != 1 {
+		t.Errorf("example.org not fully set up: catch-all %q, sending %v, tunnels %d", fake.catchAll["z2"], fake.sending["z2"], fake.tunnels)
+	}
+}
+
 func TestConnect(t *testing.T) {
 	fake := newFake()
 	srv := httptest.NewServer(fake)
