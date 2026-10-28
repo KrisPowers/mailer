@@ -323,9 +323,14 @@ func (s *Server) currentChecks() *Checks {
 // ---- handlers ----
 
 type clientSettings struct {
-	Server         string `json:"server"`
-	IMAPPort       int    `json:"imap_port"`
-	SubmissionPort int    `json:"smtp_port"`
+	Server     string `json:"server"`
+	IMAPPort   int    `json:"imap_port"`
+	SMTPServer string `json:"smtp_server"`
+	SMTPPort   int    `json:"smtp_port"`
+	// Set when sending goes through Cloudflare's relay, which takes its own
+	// sign-in. The dashboard is only reachable from this computer.
+	SMTPUser     string `json:"smtp_user,omitempty"`
+	SMTPPassword string `json:"smtp_password,omitempty"`
 }
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
@@ -338,7 +343,12 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	}
 	var client *clientSettings
 	if dnsName != "" {
-		client = &clientSettings{dnsName, config.PublicIMAPPort, config.PublicSubmissionPort}
+		cfg.Tailscale.DNSName = dnsName
+		host, port, relay := cfg.SMTPServer()
+		client = &clientSettings{Server: dnsName, IMAPPort: config.PublicIMAPPort, SMTPServer: host, SMTPPort: port}
+		if relay {
+			client.SMTPUser, client.SMTPPassword = config.RelayUser, cfg.Cloudflare.SMTPToken
+		}
 	}
 	writeJSON(w, map[string]any{
 		"domain":           cfg.Domain(),
@@ -759,14 +769,15 @@ func (s *Server) getLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 type settingsView struct {
-	RejectDMARCFailures bool  `json:"reject_dmarc_failures"`
-	SaveSentCopy        bool  `json:"save_sent_copy"`
-	MaxMessageMB        int64 `json:"max_message_mb"`
+	RejectDMARCFailures bool   `json:"reject_dmarc_failures"`
+	SaveSentCopy        bool   `json:"save_sent_copy"`
+	MaxMessageMB        int64  `json:"max_message_mb"`
+	SMTPToken           string `json:"smtp_token"`
 }
 
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Cfg.Get()
-	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.MaxMessageBytes >> 20})
+	writeJSON(w, settingsView{cfg.RejectDMARCFailures, cfg.SaveSentCopy, cfg.MaxMessageBytes >> 20, cfg.Cloudflare.SMTPToken})
 }
 
 func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
@@ -779,9 +790,20 @@ func (s *Server) putSettings(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, errors.New("max message size must be 1–25 MB (Cloudflare's limit is 25 MB)"))
 		return
 	}
+	v.SMTPToken = strings.TrimSpace(v.SMTPToken)
+	if v.SMTPToken != "" && v.SMTPToken != s.Cfg.Get().Cloudflare.SMTPToken {
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		if err := smtpSignIn(ctx, config.RelayHost, config.RelayPort, config.RelayUser, v.SMTPToken); err != nil {
+			writeErr(w, 400, fmt.Errorf("Cloudflare's SMTP relay refused the token: %w", err))
+			return
+		}
+		s.Log.Printf("admin: mail apps now send through Cloudflare's SMTP relay")
+	}
 	err := s.Cfg.Update(func(c *config.Config) {
 		c.RejectDMARCFailures = v.RejectDMARCFailures
 		c.SaveSentCopy = v.SaveSentCopy
+		c.Cloudflare.SMTPToken = v.SMTPToken
 		c.MaxMessageBytes = v.MaxMessageMB << 20
 	})
 	if err != nil {

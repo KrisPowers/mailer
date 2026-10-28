@@ -30,6 +30,11 @@ func (m *MTA) clientConfig(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	smtpHost, smtpPort, relay := cfg.SMTPServer()
+	smtpUser := "%EMAILADDRESS%"
+	if relay {
+		smtpUser = config.RelayUser
+	}
 	path := strings.ToLower(r.URL.Path)
 	switch {
 	case strings.HasPrefix(path, "/autodiscover/autodiscover.json"):
@@ -43,6 +48,10 @@ func (m *MTA) clientConfig(w http.ResponseWriter, r *http.Request) {
 		login := ""
 		if mt := emailRe.FindSubmatch(body); mt != nil {
 			login = fmt.Sprintf("\n        <LoginName>%s</LoginName>", esc(string(mt[1])))
+		}
+		smtpLogin := login
+		if relay {
+			smtpLogin = "\n        <LoginName>" + config.RelayUser + "</LoginName>"
 		}
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
@@ -62,8 +71,8 @@ func (m *MTA) clientConfig(w http.ResponseWriter, r *http.Request) {
       </Protocol>
       <Protocol>
         <Type>SMTP</Type>
-        <Server>%[1]s</Server>
-        <Port>%[3]d</Port>%[4]s
+        <Server>%[5]s</Server>
+        <Port>%[3]d</Port>%[6]s
         <DomainRequired>off</DomainRequired>
         <SPA>off</SPA>
         <SSL>on</SSL>
@@ -74,7 +83,7 @@ func (m *MTA) clientConfig(w http.ResponseWriter, r *http.Request) {
     </Account>
   </Response>
 </Autodiscover>
-`, esc(server), config.PublicIMAPPort, config.PublicSubmissionPort, login)
+`, esc(server), config.PublicIMAPPort, smtpPort, login, esc(smtpHost), smtpLogin)
 	case path == "/mail/config-v1.1.xml" || path == "/.well-known/autoconfig/mail/config-v1.1.xml":
 		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 		fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
@@ -90,15 +99,15 @@ func (m *MTA) clientConfig(w http.ResponseWriter, r *http.Request) {
       <authentication>password-cleartext</authentication>
     </incomingServer>
     <outgoingServer type="smtp">
-      <hostname>%[2]s</hostname>
+      <hostname>%[5]s</hostname>
       <port>%[4]d</port>
       <socketType>SSL</socketType>
-      <username>%%EMAILADDRESS%%</username>
+      <username>%[6]s</username>
       <authentication>password-cleartext</authentication>
     </outgoingServer>
   </emailProvider>
 </clientConfig>
-`, esc(domain), esc(server), config.PublicIMAPPort, config.PublicSubmissionPort)
+`, esc(domain), esc(server), config.PublicIMAPPort, smtpPort, esc(smtpHost), smtpUser)
 	default:
 		http.NotFound(w, r)
 	}

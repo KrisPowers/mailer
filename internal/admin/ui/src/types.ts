@@ -62,7 +62,10 @@ export interface Checks {
 export interface ClientSettings {
   server: string;
   imap_port: number;
+  smtp_server: string;
   smtp_port: number;
+  smtp_user?: string;
+  smtp_password?: string;
 }
 
 export interface Overview {
@@ -131,6 +134,7 @@ export interface Settings {
   reject_dmarc_failures: boolean;
   save_sent_copy: boolean;
   max_message_mb: number;
+  smtp_token: string;
 }
 
 export interface ConnectResult {
