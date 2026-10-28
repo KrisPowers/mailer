@@ -79,8 +79,7 @@ the server is running and how many checks need attention.
 | Page | What it's for |
 |---|---|
 | **Dashboard** | Key figures and every connection check (tunnel, each domain's Email Routing, MX, SPF, DKIM and DMARC, inbound path, Funnel, Email Sending), with a fix and an action beside anything failing |
-| **Accounts** | Accounts with mail counts and sizes; each account's page has its IMAP and SMTP settings (copy all, print), folders and sign-ins |
-| **Aliases** | Extra addresses and a catch-all per domain |
+| **Accounts** | Accounts with mail counts and sizes; each account's page has its IMAP and SMTP settings (copy all, print), its aliases and catch-alls, folders and sign-ins |
 | **Outbound queue** | Messages waiting to send; retry them |
 | **Sign-ins** | Every sign-in attempt by a mail app, why it failed, addresses blocked for too many failures, and a test sign-in |
 | **Logs** | Recent server activity |

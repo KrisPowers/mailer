@@ -164,7 +164,7 @@ b, .strong { font-weight: 500; }
   background: #fff; color: var(--header); font: 500 14px var(--font);
 }
 .header-btn:hover { background: #e7edfb; }
-.nav-toggle { display: none; }
+.header .nav-toggle { display: none; }
 
 .sidebar {
   grid-area: sidebar; background: var(--sidebar); padding: 20px 16px 16px; display: flex; flex-direction: column; gap: 2px;
@@ -397,8 +397,8 @@ input::placeholder { color: var(--text-3); }
 .table { width: 100%; border-collapse: collapse; }
 /* Columns fit their content; the one marked grow takes the spare width,
    so short columns sit together instead of spreading across the page. */
-.table th, .table td { text-align: left; padding: 0 28px 0 12px; height: 44px; border-bottom: 1px solid var(--line); white-space: nowrap; width: 1%; }
-.table th.grow { width: auto; }
+.table th, .table td { text-align: left; padding: 0 28px 0 12px; height: 44px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.table th:not(.grow) { width: 1%; }
 .table th { position: relative; height: 42px; font-weight: 500; color: var(--text); }
 .table th:not(:first-child):not(:empty)::before {
   content: ""; position: absolute; left: 0; top: 11px; bottom: 11px; width: 1px; background: var(--line-strong);
@@ -497,7 +497,10 @@ input::placeholder { color: var(--text-3); }
 .setting-text .muted { font-size: 13px; }
 .setting-actions { display: flex; gap: 10px; }
 .setting .select { width: 280px; }
-.inline-form { display: flex; gap: 10px; max-width: 560px; }
+.inline-form { display: flex; align-items: center; gap: 10px; max-width: 640px; }
+.section .inline-form { margin-bottom: 12px; }
+.inline-form .select { width: 220px; flex-shrink: 0; }
+.at-domain { white-space: nowrap; }
 
 /* ---- logs ---- */
 .live { font-size: 12px; font-weight: 500; color: var(--ok); }
@@ -519,7 +522,7 @@ input::placeholder { color: var(--text-3); }
 }
 @media (max-width: 780px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "header" "main" "footer"; }
-  .nav-toggle { display: inline-grid; margin-left: -8px; }
+  .header .nav-toggle { display: inline-grid; margin-left: -8px; }
   .plan, .command, .header-icons { display: none; }
   .header-btn { margin-left: auto; }
   .sidebar {
