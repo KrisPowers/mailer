@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -257,5 +258,35 @@ func TestRemoteHost(t *testing.T) {
 	}
 	if code := get("other.example.com", cf); code != 403 {
 		t.Errorf("another name: %d", code)
+	}
+}
+
+func TestHub(t *testing.T) {
+	s := newServer(t)
+	s.HubKeyFile = filepath.Join(t.TempDir(), "key")
+	os.WriteFile(s.HubKeyFile, []byte("hub-secret\n"), 0o600)
+	h := s.Handler()
+	get := func(path, key, role string) int {
+		req := httptest.NewRequest("GET", "http://mailer:8080"+path, nil)
+		req.Header.Set("Authorization", "Bearer "+key)
+		req.Header.Set("X-Hub-User", "kris")
+		req.Header.Set("X-Hub-Role", role)
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, req)
+		return rr.Code
+	}
+	// The hub's key works from the hub's container, with no setup here.
+	if code := get("/api/overview", "hub-secret", "user"); code != 200 {
+		t.Errorf("hub overview: %d", code)
+	}
+	if code := get("/api/server", "hub-secret", "admin"); code != 200 {
+		t.Errorf("hub admin: %d", code)
+	}
+	// Roles still apply, and a wrong key is just a foreign host.
+	if code := get("/api/server", "hub-secret", "user"); code != 403 {
+		t.Errorf("hub user reached admin route: %d", code)
+	}
+	if code := get("/api/overview", "wrong", "admin"); code != 403 {
+		t.Errorf("wrong hub key: %d", code)
 	}
 }

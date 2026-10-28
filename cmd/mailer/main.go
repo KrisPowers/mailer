@@ -109,7 +109,11 @@ func serve(dataDir, listenHost string) error {
 
 	mailLog := maillog.Open(filepath.Join(dataDir, "mail.log"))
 	m := &mta.MTA{Cfg: cfgm, Users: db, Store: st, Resolver: resolver, DKIM: dkim.signer, Log: logger, Mail: mailLog}
-	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger, CallbackHost: listenHost}
+	// A hub such as truebrew that runs mailer as one of its apps shares a key
+	// file and its own URL; the tunnel then serves the hub as the dashboard.
+	hubKey, hubURL := os.Getenv("HUB_KEY_FILE"), os.Getenv("HUB_URL")
+	setup := &cloudflare.Setup{Cfg: cfgm, DKIMRecord: dkim.record, Log: logger, CallbackHost: listenHost,
+		DashboardService: hubURL}
 	q, err := queue.New(filepath.Join(dataDir, "queue"), &cloudflare.Relay{Setup: setup}, m.Bounce, logger)
 	if err != nil {
 		return err
@@ -119,7 +123,7 @@ func serve(dataDir, listenHost string) error {
 
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}
 	adm := &admin.Server{Cfg: cfgm, Users: db, Store: st, Queue: q, MTA: m, Setup: setup,
-		Tunnel: runner, Logs: logs, Log: logger, Audit: signIns, Limiter: limiter, Auth: dashboardAuth}
+		Tunnel: runner, Logs: logs, Log: logger, Audit: signIns, Limiter: limiter, Auth: dashboardAuth, HubKeyFile: hubKey}
 
 	sub := &smtp.Server{Hostname: hostname, Mode: smtp.ModeSubmission, Users: db, Limiter: limiter,
 		MaxSize: maxClientMessage, Backend: mta.Submission{MTA: m}, Log: logger, Audit: signIns}
@@ -181,8 +185,9 @@ func serve(dataDir, listenHost string) error {
 		close(tunnelDone)
 	}()
 	// Once set up, Tailscale signs in (or reconnects) under the name and key
-	// saved in the dashboard; until then it waits.
-	if !dashboardAuth.NeedsSetup() {
+	// saved in the dashboard; until then it waits. Under a hub there's no
+	// setup of mailer's own.
+	if !dashboardAuth.NeedsSetup() || hubKey != "" {
 		tailscale.Up(ctx, cfg.Tailscale.Hostname, cfg.Tailscale.AuthKey, logger.Printf)
 	}
 	go adm.RunChecks(ctx)
