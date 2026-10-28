@@ -33,14 +33,12 @@ export function Panel({ title, icon, actions, children }: PanelProps) {
   );
 }
 
-export function Kpi({ icon, value, label }: { icon: IconName; value: ReactNode; label: string }) {
+// Kpi is one figure in the summary row, label above value.
+export function Kpi({ value, label }: { value: ReactNode; label: string }) {
   return (
     <div className="kpi">
-      <div className="ico"><Icon name={icon} /></div>
-      <div>
-        <div className="val">{value}</div>
-        <div className="lbl">{label}</div>
-      </div>
+      <div className="lbl">{label}</div>
+      <div className="val">{value}</div>
     </div>
   );
 }
