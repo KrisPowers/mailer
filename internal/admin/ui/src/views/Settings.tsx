@@ -20,6 +20,7 @@ export function Settings() {
   const { data, error } = useLoad(api.settings);
   const [s, setS] = useState<SettingsT | null>(null);
   const [maxMB, setMaxMB] = useState("");
+  const [token, setToken] = useState("");
   const toast = useToast();
   const { open } = useModal();
   const enableTailscale = useEnableTailscale();
@@ -28,6 +29,7 @@ export function Settings() {
     if (data) {
       setS(data);
       setMaxMB(String(data.max_message_mb));
+      setToken(data.smtp_token);
     }
   }, [data]);
 
@@ -43,6 +45,7 @@ export function Settings() {
     } catch (err) {
       setS(prev);
       setMaxMB(String(prev.max_message_mb));
+      setToken(prev.smtp_token);
       toast((err as Error).message, true);
     }
   };
@@ -61,6 +64,16 @@ export function Settings() {
             <Switch title="Reject DMARC failures" checked={s.reject_dmarc_failures} onChange={(v) => put({ reject_dmarc_failures: v })}>
               Refuse mail that fails the sender's DMARC policy when it says reject. When off, it goes to Junk.
             </Switch>
+            <div className="switch-row">
+              <div className="txt">
+                <b>Cloudflare SMTP token</b>
+                <span className="muted">An API token with Email Sending permission. Mail apps then send through
+                  smtp.mx.cloudflare.net on port 465, which Outlook can reach. Clear it to send through this server.</span>
+              </div>
+              <input type="password" autoComplete="off" spellCheck={false} value={token}
+                onChange={(e) => setToken(e.target.value)}
+                onBlur={() => token.trim() !== s.smtp_token && put({ smtp_token: token.trim() })} />
+            </div>
             <Switch title="Save sent copies" checked={s.save_sent_copy} onChange={(v) => put({ save_sent_copy: v })}>
               File a copy of every sent message in Sent. Leave off for Outlook, which does this itself.
             </Switch>

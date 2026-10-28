@@ -53,6 +53,10 @@ type Cloudflare struct {
 	ConnectedAt   time.Time `json:"connected_at"`
 	// Zones holds each connected domain's Cloudflare state, keyed by domain.
 	Zones map[string]Zone `json:"zones"`
+	// SMTPToken is an API token with Email Sending permission. When set,
+	// mail apps send through Cloudflare's SMTP relay on port 465, which
+	// Outlook's cloud sync reaches; it can't send on Funnel's port 8443.
+	SMTPToken string `json:"smtp_token,omitempty"`
 
 	// Single-domain fields from before Zones, moved into Zones on load.
 	ZoneID     string `json:"zone_id,omitempty"`
@@ -88,6 +92,22 @@ const (
 	PublicIMAPPort       = 443
 	PublicSubmissionPort = 8443
 )
+
+// Cloudflare's SMTP relay for Email Sending, and the username it takes.
+const (
+	RelayHost = "smtp.mx.cloudflare.net"
+	RelayPort = 465
+	RelayUser = "api_token"
+)
+
+// SMTPServer is the outgoing server mail apps use: Cloudflare's relay when
+// a relay token is set, otherwise this server through Funnel.
+func (c *Config) SMTPServer() (host string, port int, relay bool) {
+	if c.Cloudflare.SMTPToken != "" {
+		return RelayHost, RelayPort, true
+	}
+	return c.Tailscale.DNSName, PublicSubmissionPort, false
+}
 
 func (c *Config) IsLocalDomain(domain string) bool {
 	domain = strings.ToLower(domain)

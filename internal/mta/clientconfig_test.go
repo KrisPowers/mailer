@@ -48,4 +48,25 @@ func TestClientConfig(t *testing.T) {
 	if code, _ := get("GET", "mail-in.example.com", "/mail/config-v1.1.xml", ""); code != 404 {
 		t.Errorf("inbound host: %d", code)
 	}
+
+	// With a relay token, sending goes through Cloudflare's relay; the
+	// token itself is never published.
+	cfgm.Update(func(c *config.Config) { c.Cloudflare.SMTPToken = "secret-token" })
+	code, body = get("POST", "autodiscover.example.com", "/autodiscover/autodiscover.xml",
+		`<Autodiscover><Request><EMailAddress>kris@example.com</EMailAddress></Request></Autodiscover>`)
+	for _, want := range []string{"<Server>box.tailnet.ts.net</Server>", "<Port>443</Port>", "<LoginName>kris@example.com</LoginName>",
+		"<Server>smtp.mx.cloudflare.net</Server>", "<Port>465</Port>", "<LoginName>api_token</LoginName>"} {
+		if code != 200 || !strings.Contains(body, want) {
+			t.Errorf("autodiscover with relay missing %s: %s", want, body)
+		}
+	}
+	_, ac := get("GET", "autoconfig.example.com", "/mail/config-v1.1.xml", "")
+	for _, b := range []string{body, ac} {
+		if strings.Contains(b, "secret-token") || strings.Contains(b, "8443") {
+			t.Errorf("relay config leaks the token or the Funnel port: %s", b)
+		}
+	}
+	if !strings.Contains(ac, "<hostname>smtp.mx.cloudflare.net</hostname>") || !strings.Contains(ac, "<username>api_token</username>") {
+		t.Errorf("autoconfig with relay: %s", ac)
+	}
 }

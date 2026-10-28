@@ -86,7 +86,8 @@ func (s *Server) signInSteps(ctx context.Context, email, password string) []clou
 		return steps
 	}
 
-	host := s.Cfg.Get().Tailscale.DNSName
+	cfg := s.Cfg.Get()
+	host := cfg.Tailscale.DNSName
 	if c := s.currentChecks(); c != nil && c.Tailscale.DNSName != "" {
 		host = c.Tailscale.DNSName
 	}
@@ -97,14 +98,20 @@ func (s *Server) signInSteps(ctx context.Context, email, password string) []clou
 	step("Funnel address", nil, host)
 	step(fmt.Sprintf("Sign in to IMAP at %s:%d", host, config.PublicIMAPPort),
 		imapSignIn(ctx, host, email, password), "signed in and opened INBOX")
-	step(fmt.Sprintf("Sign in to SMTP at %s:%d", host, config.PublicSubmissionPort),
-		smtpSignIn(ctx, host, email, password), "signed in, ready to send")
+	cfg.Tailscale.DNSName = host
+	smtpHost, smtpPort, relay := cfg.SMTPServer()
+	smtpUser, smtpPass := email, password
+	if relay {
+		smtpUser, smtpPass = config.RelayUser, cfg.Cloudflare.SMTPToken
+	}
+	step(fmt.Sprintf("Sign in to SMTP at %s:%d", smtpHost, smtpPort),
+		smtpSignIn(ctx, smtpHost, smtpPort, smtpUser, smtpPass), "signed in, ready to send")
 	return steps
 }
 
-// dialFunnel opens a TLS connection to host's public Funnel port and
-// checks Tailscale's certificate, as a mail app does.
-func dialFunnel(ctx context.Context, host string, port int) (*tls.Conn, error) {
+// dialTLS opens a TLS connection to host:port and checks its certificate,
+// as a mail app does.
+func dialTLS(ctx context.Context, host string, port int) (*tls.Conn, error) {
 	d := &tls.Dialer{NetDialer: &net.Dialer{Timeout: 15 * time.Second}, Config: &tls.Config{ServerName: host}}
 	c, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, fmt.Sprint(port)))
 	if err != nil {
@@ -115,7 +122,7 @@ func dialFunnel(ctx context.Context, host string, port int) (*tls.Conn, error) {
 }
 
 func imapSignIn(ctx context.Context, host, email, password string) error {
-	c, err := dialFunnel(ctx, host, config.PublicIMAPPort)
+	c, err := dialTLS(ctx, host, config.PublicIMAPPort)
 	if err != nil {
 		return err
 	}
@@ -159,8 +166,8 @@ func imapSignIn(ctx context.Context, host, email, password string) error {
 	return nil
 }
 
-func smtpSignIn(ctx context.Context, host, email, password string) error {
-	c, err := dialFunnel(ctx, host, config.PublicSubmissionPort)
+func smtpSignIn(ctx context.Context, host string, port int, user, password string) error {
+	c, err := dialTLS(ctx, host, port)
 	if err != nil {
 		return err
 	}
@@ -176,7 +183,7 @@ func smtpSignIn(ctx context.Context, host, email, password string) error {
 	if ok, _ := sc.Extension("AUTH"); !ok {
 		return errors.New("the server doesn't offer sign-in on this port")
 	}
-	if err := sc.Auth(smtp.PlainAuth("", email, password, host)); err != nil {
+	if err := sc.Auth(smtp.PlainAuth("", user, password, host)); err != nil {
 		return fmt.Errorf("sign-in refused: %w", err)
 	}
 	sc.Quit()
