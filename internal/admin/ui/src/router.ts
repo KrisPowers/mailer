@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const VIEWS = ["dashboard", "accounts", "queue", "logs", "settings"] as const;
+export const VIEWS = ["accounts", "queue", "logs", "settings"] as const;
 export type View = (typeof VIEWS)[number];
 
 export interface Route {
@@ -10,7 +10,7 @@ export interface Route {
 
 function current(): Route {
   const [v, ...rest] = decodeURIComponent(location.hash.slice(1)).split("/");
-  const view = (VIEWS as readonly string[]).includes(v) ? (v as View) : "dashboard";
+  const view = (VIEWS as readonly string[]).includes(v) ? (v as View) : "accounts";
   return { view, param: view === v ? rest.join("/") : "" };
 }
 

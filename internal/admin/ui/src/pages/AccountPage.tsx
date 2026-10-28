@@ -237,7 +237,7 @@ const RESULTS: Record<string, { label: string; health: Health; fix: string }> = 
   ok: { label: "Signed in", health: "ok", fix: "" },
   bad_password: { label: "Wrong password", health: "bad", fix: "Re-enter the password in the app, or set a new one." },
   unknown_user: { label: "No such account", health: "bad", fix: "The username must be the full email address." },
-  blocked: { label: "Blocked", health: "bad", fix: "Too many failures from this address. Unblock it on the Dashboard once the password is fixed." },
+  blocked: { label: "Blocked", health: "bad", fix: "Too many failures from this address in 15 minutes. Fix the password in the app, then unblock the address." },
   locked: { label: "Sign-in locked", health: "warn", fix: "Allow sign-in under Controls." },
   needs_tls: { label: "Not encrypted", health: "bad", fix: "Set the app's security to SSL/TLS." },
   unsupported: { label: "Method not offered", health: "warn", fix: "Choose normal password sign-in in the app." },
@@ -276,6 +276,7 @@ function AccountSignIns({ email }: { email: string }) {
 }
 
 function SignInRow({ e }: { e: SignInEvent }) {
+  const toast = useToast();
   const r = RESULTS[e.result] ?? { label: e.result, health: "none" as Health, fix: "" };
   return (
     <tr>
@@ -285,6 +286,13 @@ function SignInRow({ e }: { e: SignInEvent }) {
       <td className="mono">{e.ip}</td>
       <td>{r.label}</td>
       <td className="col-actions">
+        <span className="row-actions">
+        {e.result === "blocked" && (
+          <IconButton icon="restart_alt" label={"Unblock " + e.ip} tone="accent" onClick={async () => {
+            await api.unblock(e.ip);
+            toast("Unblocked " + e.ip);
+          }} />
+        )}
         {(!!e.detail || !!r.fix) && (
           <PopoverButton label="Details" content={
             <div className="popover-body">
@@ -295,6 +303,7 @@ function SignInRow({ e }: { e: SignInEvent }) {
             </div>
           }><Icon name="info" /></PopoverButton>
         )}
+        </span>
       </td>
     </tr>
   );
