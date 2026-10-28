@@ -66,9 +66,9 @@ type Server struct {
 	Backend      Backend
 	Log          *log.Logger
 	Audit        *audit.Log // sign-ins on the submission port
-	// Trace logs every command a client sends and every reply, with
-	// sign-in secrets hidden.
-	Trace bool
+	// Trace, when it returns true, logs every command a client sends and
+	// every reply, with sign-in secrets hidden.
+	Trace func() bool
 }
 
 const (
@@ -145,7 +145,7 @@ func (srv *Server) handle(c net.Conn, terminated bool) {
 		s.conn.SetReadDeadline(time.Now().Add(cmdTimeout))
 		line, err := s.readLine(maxCmdLine)
 		if err != nil {
-			if s.srv.Trace {
+			if s.srv.Trace != nil && s.srv.Trace() {
 				s.srv.Log.Printf("smtp trace %s: read ended: %v", s.ip, err)
 			}
 			if errors.Is(err, errLineTooLong) {
@@ -154,7 +154,7 @@ func (srv *Server) handle(c net.Conn, terminated bool) {
 			return
 		}
 		verb, arg, _ := strings.Cut(string(line), " ")
-		if s.srv.Trace {
+		if s.srv.Trace != nil && s.srv.Trace() {
 			shown := string(line)
 			if strings.EqualFold(verb, "AUTH") {
 				shown = verb + " " + strings.Fields(arg + " x")[0] + " [hidden]"
@@ -194,7 +194,7 @@ func (s *session) readLine(max int) ([]byte, error) {
 }
 
 func (s *session) reply(code int, enhanced, msg string) {
-	if s.srv.Trace {
+	if s.srv.Trace != nil && s.srv.Trace() {
 		s.srv.Log.Printf("smtp trace %s > %d %s %s", s.ip, code, enhanced, strings.ReplaceAll(msg, "\n", " | "))
 	}
 	lines := strings.Split(msg, "\n")
