@@ -11,7 +11,8 @@
 | `docs` | The guides, which the dashboard's Docs page builds in, and `images/` for the README |
 | `internal/cloudflare/worker` | The Email Routing Worker deployed to Cloudflare |
 | `docker/` | The container's entrypoint |
-| `scripts/` | Installers and the dashboard build script |
+| `scripts/` | Installers, the `mailer` command Homebrew installs, and the dashboard build script |
+| `Formula` | The Homebrew formula; this repository is its own tap |
 
 ## Server
 
@@ -55,3 +56,5 @@ committed on its branch.
 On every push to `main` and every `v*` tag, `Release` runs `CI` and, only if it
 passes, publishes the image to `ghcr.io/krispowers/mailer` with an SBOM and
 provenance: `latest` from `main`, and the version from `v*` tags.
+
+After tagging a release, set the tag in `Formula/mailer.rb` to it.
