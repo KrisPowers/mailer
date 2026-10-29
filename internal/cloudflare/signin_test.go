@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,13 @@ import (
 )
 
 func TestSignIn(t *testing.T) {
+	// Cloudflare only redirects to the registered port, so the test needs
+	// it free; a running Mailer holds it.
+	if l, err := net.Listen("tcp", "localhost:"+oauthPort); err != nil {
+		t.Skipf("port %s is in use, probably by a running Mailer", oauthPort)
+	} else {
+		l.Close()
+	}
 	fake := newFake()
 	srv := httptest.NewServer(fake)
 	defer srv.Close()
