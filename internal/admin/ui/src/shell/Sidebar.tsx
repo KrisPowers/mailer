@@ -18,8 +18,10 @@ export function Sidebar({ view }: { view: View }) {
       {item("accounts", "group", "Accounts", ov?.accounts)}
       {item("queue", "outbox", "Queue", ov?.queue)}
       {item("logs", "terminal", "Logs")}
+      <div className="nav-section">Admin</div>
+      {admin && item("access", "devices", "Access", ov?.pending_devices)}
+      {item("settings", "settings", "Settings")}
       {item("docs", "menu_book", "Docs")}
-      {admin && <><hr />{item("access", "devices", "Access", ov?.pending_devices)}</>}
     </nav>
   );
 }

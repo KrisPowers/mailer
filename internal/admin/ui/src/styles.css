@@ -179,7 +179,7 @@ b, .strong { font-weight: 500; }
   font-size: 10px; font-weight: 700; color: #fff; background: var(--primary); border-radius: 999px;
   min-width: 20px; height: 16px; padding: 0 6px; display: inline-grid; place-items: center;
 }
-.sidebar hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+.nav-section { margin: 18px 0 4px; padding: 10px 12px 0; border-top: 1px solid var(--line); font: 700 14px var(--font); color: var(--text-2); }
 
 .main { grid-area: main; overflow: auto; outline: none; }
 .page { padding: 24px 32px 20px; min-height: 100%; display: flex; flex-direction: column; }
