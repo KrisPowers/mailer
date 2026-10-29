@@ -2,15 +2,9 @@
 
 Self-hosted mail, zero ports.
 
-<a href="docs/how-it-works.md"><img src="docs/images/flow.jpg" width="100%" alt="How mail moves: senders reach Cloudflare Email Routing, which passes mail through the Cloudflare Tunnel to Mailer; mail apps connect through Tailscale Funnel; replies go out through Cloudflare Email Sending, DKIM-signed. No ports are open."></a>
+<a href="docs/how-it-works.md"><img src="docs/images/flow.jpg" width="100%" alt="How mail moves: senders reach Cloudflare, which passes mail through its tunnel to Mailer; mail apps connect through Tailscale Funnel; replies go out through Cloudflare Email Sending, DKIM-signed. No ports are open."></a>
 
-<a href="docs/how-it-works.md#what-setup-does"><img src="docs/images/setup.jpg" width="100%" alt="Sets itself up: connecting Cloudflare once sets up Routing, the Worker, Sending, DKIM, DMARC and SPF for every domain on the account, including domains added later."></a>
-
-<a href="docs/configuration.md#ports"><img src="docs/images/ports.jpg" width="100%" alt="Zero open ports: connections from the internet are refused at the router, while the Cloudflare Tunnel and Tailscale Funnel both connect outward."></a>
-
-<a href="docs/how-it-works.md#what-setup-does"><img src="docs/images/apps.jpg" width="100%" alt="Mail apps set themselves up: Outlook asks autodiscover for the domain and finds the IMAP and SMTP servers."></a>
-
-<a href="docs/configuration.md#dashboard-access"><img src="docs/images/dashboard.jpg" width="100%" alt="Dashboard from anywhere: approved devices reach the sign-in, and a new browser waits with its code until an admin approves it."></a>
+<a href="docs/how-it-works.md#what-setup-does"><img src="docs/images/setup.jpg" width="100%" alt="Sets itself up: connecting Cloudflare once sets up Routing, the Worker, Sending, DKIM, DMARC and SPF for every domain, including domains added later."></a>
 
 ## Requirements
 
