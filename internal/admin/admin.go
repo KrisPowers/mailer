@@ -55,9 +55,6 @@ type Server struct {
 	Limiter *users.Limiter
 	// Auth holds the dashboard's own accounts, devices and sessions.
 	Auth *auth.Store
-	// HubKeyFile, when set, holds the key a hub such as truebrew calls this
-	// API with on its signed-in people's behalf (see hub.go).
-	HubKeyFile string
 
 	mu     sync.Mutex
 	checks *Checks
@@ -134,12 +131,6 @@ func (s *Server) Handler() http.Handler {
 // computer only.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// The hub calls from its own container, by this container's name.
-		if _, ok := s.fromHub(r); ok {
-			w.Header().Set("Cache-Control", "no-store")
-			next.ServeHTTP(w, r)
-			return
-		}
 		host := strings.ToLower(hostOnly(r.Host))
 		cfg := s.Cfg.Get()
 		public := cfg.DashboardHost()

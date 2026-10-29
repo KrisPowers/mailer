@@ -81,13 +81,9 @@ func clientIP(r *http.Request) string {
 }
 
 // signedIn lets a request through only with a valid token from the device
-// it was issued to, or with the hub's key.
+// it was issued to.
 func (s *Server) signedIn(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if c, ok := s.fromHub(r); ok {
-			next(w, r.WithContext(context.WithValue(r.Context(), claimsKey{}, c)))
-			return
-		}
 		token, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		if !ok {
 			writeErr(w, 401, auth.ErrSession)
