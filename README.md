@@ -2,6 +2,17 @@
 
 Self-hosted mail, zero ports.
 
+<table>
+  <tr>
+    <td width="50%"><a href="docs/how-it-works.md#what-setup-does"><img src="docs/images/setup.jpg" alt="Sets itself up: connect Cloudflare once and every domain gets Email Routing, the inbound Worker, Email Sending, and DKIM, DMARC and SPF records, including domains added later."></a></td>
+    <td width="50%"><a href="docs/configuration.md#ports"><img src="docs/images/ports.jpg" alt="Zero open ports: the Cloudflare Tunnel and Tailscale Funnel both connect outward, so every mail port on your router stays closed."></a></td>
+  </tr>
+  <tr>
+    <td width="50%"><a href="docs/how-it-works.md#what-setup-does"><img src="docs/images/apps.jpg" alt="Mail apps set themselves up: Outlook and Thunderbird take the address and password and find the IMAP and SMTP settings."></a></td>
+    <td width="50%"><a href="docs/configuration.md#dashboard-access"><img src="docs/images/dashboard.jpg" alt="Dashboard from anywhere: every browser shows a code that an admin approves before it gets a sign-in."></a></td>
+  </tr>
+</table>
+
 ## Requirements
 
 - Docker with Compose v2 ([Docker Desktop](https://docs.docker.com/get-docker/)
