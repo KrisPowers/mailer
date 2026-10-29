@@ -1,6 +1,6 @@
 import { headers, refresh } from "./session";
 import type {
-  Account, Aliases, AuthStatus, Checks, ConnectResult, Credentials, DashUser, DeviceList, Locks, MailEntry, NewDevice, Overview,
+  Account, Aliases, AuthStatus, Checks, ConnectResult, Credentials, DashUser, DeviceList, FlaggedMessage, Locks, MailEntry, NewDevice, Overview,
   QueueItem, ServerSettings, SessionList, Settings, SignIns, Step, TailscaleResult, Tokens,
 } from "./types";
 
@@ -70,6 +70,9 @@ export const api = {
   deleteAccount: (email: string) => call<{ ok: boolean }>("POST", "/api/accounts/delete", { email }),
   setLocks: (email: string, locks: Locks) => call<Locks>("POST", "/api/accounts/locks", { email, ...locks }),
   mail: () => call<MailEntry[]>("GET", "/api/mail"),
+  flagged: () => call<FlaggedMessage[]>("GET", "/api/flagged"),
+  clearFlag: (m: FlaggedMessage) => call<{ ok: boolean }>("POST", "/api/flagged/clear", { account: m.account, mailbox: m.mailbox, uid: m.uid }),
+  trashFlagged: (m: FlaggedMessage) => call<{ ok: boolean }>("POST", "/api/flagged/trash", { account: m.account, mailbox: m.mailbox, uid: m.uid }),
   aliases: () => call<Aliases>("GET", "/api/aliases"),
   saveAliases: (a: Aliases) => call<Aliases>("PUT", "/api/aliases", a),
   queue: () => call<QueueItem[]>("GET", "/api/queue"),

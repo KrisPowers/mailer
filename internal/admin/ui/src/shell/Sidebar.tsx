@@ -16,6 +16,7 @@ export function Sidebar({ view }: { view: View }) {
   return (
     <nav className="sidebar" aria-label="Main">
       {item("accounts", "group", "Accounts", ov?.accounts)}
+      {item("flagged", "flag", "Flagged", ov?.flagged)}
       {item("queue", "outbox", "Queue", ov?.queue)}
       {item("logs", "terminal", "Logs")}
       <div className="nav-section">Admin</div>

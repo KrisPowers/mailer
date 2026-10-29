@@ -5,6 +5,7 @@ import { OverviewProvider, setupStep, useOverview } from "./overview";
 import { Access } from "./pages/Access";
 import { Accounts } from "./pages/Accounts";
 import { Docs } from "./pages/Docs";
+import { Flagged } from "./pages/Flagged";
 import { Logs } from "./pages/Logs";
 import { Queue } from "./pages/Queue";
 import { Settings } from "./pages/Settings";
@@ -69,6 +70,7 @@ function Shell() {
   const page = {
     access: <Access />,
     accounts: <Accounts param={route.param} />,
+    flagged: <Flagged />,
     queue: <Queue />,
     logs: <Logs />,
     docs: <Docs param={route.param} />,

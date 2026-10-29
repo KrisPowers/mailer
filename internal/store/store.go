@@ -33,6 +33,10 @@ const (
 	FlagFlagged  = `\Flagged`
 	FlagDeleted  = `\Deleted`
 	FlagDraft    = `\Draft`
+
+	// Keywords Mailer sets on delivery: a risky attachment, bulk mail.
+	FlagRisky     = "$Risky"
+	FlagMarketing = "$Marketing"
 )
 
 var (
