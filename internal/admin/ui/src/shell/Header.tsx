@@ -11,12 +11,10 @@ import { Button, IconButton } from "../ui/Button";
 import { PopoverButton } from "../ui/Floating";
 import { Icon, type IconName } from "../ui/Icon";
 import { useModal } from "../ui/Modal";
-import { useToast } from "../ui/Toast";
 
 export function Header({ onToggleNav }: { onToggleNav: () => void }) {
-  const { ov, reload } = useOverview();
+  const { ov } = useOverview();
   const { open } = useModal();
-  const toast = useToast();
   return (
     <header className="header">
       <IconButton className="nav-toggle" icon="left_panel_open" label="Menu" onClick={onToggleNav} />
@@ -27,11 +25,6 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
       <CommandSearch />
       <div className="header-icons">
         <IconButton icon="key" label="Mail app settings" onClick={() => open(<MailSettings />)} />
-        <IconButton icon="refresh" label="Re-check connections" onClick={async () => {
-          await api.check();
-          await reload();
-          toast("Connections re-checked");
-        }} />
         <a className="icon-btn" href={href("settings")} aria-label="Settings" data-tip="Settings"><Icon name="settings" /></a>
         <UserMenu />
       </div>
