@@ -2,9 +2,9 @@
 
 Self-hosted mail, zero ports.
 
-<a href="docs/how-it-works.md"><img src="docs/images/flow.jpg" width="100%" alt="How mail moves: senders reach Cloudflare, which passes mail through its tunnel to Mailer; mail apps connect through Tailscale Funnel; replies go out through Cloudflare Email Sending, DKIM-signed. No ports are open."></a>
+<a href="docs/how-it-works.md"><img src="docs/images/how-it-works.jpg" width="100%" alt="How it works: scanners on the internet are refused on ports 25, 143 and 993 because every port on your network is closed. Senders reach Cloudflare Email Routing, which hands mail to Mailer through the tunnel. Mail apps connect through Tailscale Funnel on IMAP 443 and SMTP 8443, after autodiscover finds the settings through the tunnel. Replies go out through Cloudflare Email Sending to recipients, DKIM-signed."></a>
 
-<a href="docs/how-it-works.md#what-setup-does"><img src="docs/images/setup.jpg" width="100%" alt="Sets itself up: connecting Cloudflare once sets up Routing, the Worker, Sending, DKIM, DMARC and SPF for every domain, including domains added later."></a>
+<a href="docs/configuration.md#dashboard-access"><img src="docs/images/setup-and-access.jpg" width="100%" alt="Sets itself up: connecting Cloudflare once sets up Routing, the Worker, Sending, DKIM, DMARC and SPF for every domain on the account, including domains added later. Dashboard from anywhere: approved devices reach the dashboard sign-in, and a new browser waits with its code until an admin approves it."></a>
 
 ## Requirements
 
