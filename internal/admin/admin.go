@@ -108,6 +108,9 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/accounts/locks", s.setLocks)
 	api("GET /api/aliases", s.getAliases)
 	api("PUT /api/aliases", s.putAliases)
+	api("GET /api/flagged", s.getFlagged)
+	api("POST /api/flagged/clear", s.clearFlags)
+	api("POST /api/flagged/trash", s.trashFlagged)
 	api("GET /api/queue", s.getQueue)
 	api("GET /api/mail", s.getMail)
 	api("POST /api/queue/retry", s.retryQueue)
@@ -417,6 +420,7 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 		"tailscale_setup":  !cfg.Tailscale.EnabledAt.IsZero(),
 		"accounts":         len(s.Users.List()),
 		"queue":            len(q),
+		"flagged":          s.flaggedCount(),
 		"checks":           checks,
 		"client":           client,
 		"last_inbound":     s.MTA.LastInbound(),

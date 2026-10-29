@@ -107,8 +107,22 @@ func (m *MTA) deliverLocal(user string, junk bool, data []byte) error {
 			box = j
 		}
 	}
-	_, _, err = acct.Append(box, data, nil, time.Now())
+	_, _, err = acct.Append(box, data, autoFlags(data), time.Now())
 	return err
+}
+
+// autoFlags marks risky attachments and bulk mail, for mail apps and the
+// dashboard's Flagged page.
+func autoFlags(data []byte) []string {
+	var flags []string
+	if len(message.RiskyFiles(data)) > 0 {
+		flags = append(flags, store.FlagRisky)
+	}
+	hdr, _ := message.SplitHeader(data)
+	if message.Bulk(message.ParseHeader(hdr)) {
+		flags = append(flags, store.FlagMarketing)
+	}
+	return flags
 }
 
 func tempErr(msg string) error { return &smtp.Error{Code: 451, Enhanced: "4.3.0", Msg: msg} }

@@ -76,6 +76,7 @@ export interface Overview {
   tailscale_setup: boolean;
   accounts: number;
   queue: number;
+  flagged: number;
   checks: Checks | null;
   client: ClientSettings | null;
   last_inbound: string;
@@ -107,6 +108,20 @@ export interface Locks {
   lock_receive?: boolean;
   lock_send?: boolean;
   lock_login?: boolean;
+}
+
+export type FlagReason = "flagged" | "risky" | "marketing";
+
+export interface FlaggedMessage {
+  account: string;
+  mailbox: string;
+  uid: number;
+  date: string;
+  size: number;
+  from: string;
+  subject: string;
+  reasons: FlagReason[];
+  files?: string[];
 }
 
 export interface MailEntry {

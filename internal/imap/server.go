@@ -637,7 +637,7 @@ func (s *session) selectMailbox(name string, readOnly bool) result {
 			firstUnseen = i + 1
 		}
 	}
-	s.writef("* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft)\r\n")
+	s.writef("* FLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft %s %s)\r\n", store.FlagRisky, store.FlagMarketing)
 	s.writef("* OK [PERMANENTFLAGS (\\Answered \\Flagged \\Deleted \\Seen \\Draft \\*)] flags permitted\r\n")
 	s.writef("* %d EXISTS\r\n* 0 RECENT\r\n", len(s.uids))
 	if firstUnseen > 0 {

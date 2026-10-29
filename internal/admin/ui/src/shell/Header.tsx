@@ -61,6 +61,7 @@ function UserMenu() {
 
 const PAGES: { view: View; label: string; icon: IconName; admin?: boolean }[] = [
   { view: "accounts", label: "Accounts", icon: "group" },
+  { view: "flagged", label: "Flagged", icon: "flag" },
   { view: "queue", label: "Queue", icon: "outbox" },
   { view: "logs", label: "Logs", icon: "terminal" },
   { view: "docs", label: "Docs", icon: "menu_book" },
