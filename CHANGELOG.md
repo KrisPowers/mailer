@@ -19,6 +19,7 @@ The first release.
 - Web dashboard for accounts, aliases and catch-alls, the queue, logs and a
   per-account sign-in record with a test sign-in, optionally served through the
   tunnel behind device approval and dashboard accounts.
+- A Docs page in the dashboard with every guide.
 - Sign-in limits per address and per mail account.
 - Installers for Linux, macOS and Windows, and a multi-platform image at
   `ghcr.io/krispowers/mailer`.
