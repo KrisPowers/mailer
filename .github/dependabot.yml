@@ -1,0 +1,25 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Base images and the Tailscale and cloudflared binaries in the image.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Dashboard dependencies. A bump changes the committed build in
+  # internal/admin/web, so rebuild and commit it on the update's branch.
+  - package-ecosystem: npm
+    directory: /internal/admin/ui
+    schedule:
+      interval: monthly
+    groups:
+      dashboard:
+        patterns: ["*"]
