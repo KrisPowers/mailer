@@ -1,6 +1,6 @@
 # Installs or updates Mailer on Windows:
 #
-#   irm https://raw.githubusercontent.com/KrisPowers/Mailer/main/scripts/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/KrisPowers/mailer/main/scripts/install.ps1 | iex
 #
 # Downloads compose.yaml into $env:MAILER_HOME (default
 # %LOCALAPPDATA%\mailer), pulls the published image and starts the
@@ -9,7 +9,7 @@
 # A script block, so a failure returns instead of closing the window
 # the one-liner was pasted into.
 & {
-    $repo = 'https://raw.githubusercontent.com/KrisPowers/Mailer/main'
+    $repo = 'https://raw.githubusercontent.com/KrisPowers/mailer/main'
     $dir = if ($env:MAILER_HOME) { $env:MAILER_HOME } else { Join-Path $env:LOCALAPPDATA 'mailer' }
 
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
