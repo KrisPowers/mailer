@@ -78,14 +78,16 @@ The dashboard is at <http://localhost:8080> on the computer running Docker, and 
 Before it opens, a browser needs an approved device and a signed-in account (see
 [Configuration](configuration.md#dashboard-access)).
 
-The header has search (Ctrl+K), mail app settings, re-check, settings, the
-signed-in account with **Sign out**, and **New account**. The status bar along the
-bottom shows whether the server is running, and any failing checks with the button
-that fixes each.
+The header has search (Ctrl+K), mail app settings, the signed-in account with
+**Sign out**, and **New account**. The sidebar has the mail pages, then an
+**Admin** section with Access, Settings and Docs. The status bar along the bottom
+shows whether the server is running, and any failing checks with the button that
+fixes each; the checks run again every minute by themselves.
 
 | Page | What it's for |
 |---|---|
 | **Accounts** | The accounts table. Each account's page has its IMAP and SMTP settings (copy all, print), controls to lock receiving, sending or sign-in, its aliases and catch-all, folders, and sign-ins with a test |
+| **Flagged** | Every flagged message in every account: flagged by users in their mail apps, or by Mailer on delivery for a risky attachment or as marketing. Clear the flag or move the message to Trash |
 | **Queue** | All mail, received and sent: waiting, delivered, junk, rejected, sent, bounced |
 | **Logs** | Recent server activity |
 | **Docs** | These guides: how it works, configuration, the dashboard and troubleshooting |
@@ -135,6 +137,12 @@ is active) wait in the queue and are retried for four days.
 Cloudflare Email Routing hands each message to the Worker, which posts it through
 the tunnel to Mailer. Mailer checks SPF, DKIM and DMARC, applies aliases and
 catch-alls, and files it in the account's mailbox.
+
+Mailer also flags mail as it arrives, with keywords mail apps can show:
+\`$Risky\` when an attachment can run code (programs, scripts, shortcuts,
+macro-enabled Office files, disk images), and \`$Marketing\` for bulk mail (a
+\`List-Unsubscribe\` header or \`Precedence: bulk\`). Those, and messages users flag
+in their mail apps, are listed on the dashboard's **Flagged** page.
 
 ## Limits
 
