@@ -551,8 +551,6 @@ input::placeholder { color: var(--text-3); }
 .gate-form .field:first-child { margin-top: 4px; }
 .gate-form .callout { margin-bottom: 0; }
 .gate-submit { width: 100%; margin-top: 24px; height: 40px; }
-.gate-foot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
-.gate-foot .icon { color: var(--text-3); }
 
 .device-id { margin: 16px 0; }
 .device-code {

@@ -14,7 +14,7 @@ type Phase =
   | { kind: "setup" }
   | { kind: "setup-elsewhere" }
   | { kind: "pending"; code: string }
-  | { kind: "login"; code: string }
+  | { kind: "login" }
   | { kind: "in" };
 
 // Gate stands in front of the dashboard. A browser gets its device ID on
@@ -38,7 +38,7 @@ export function Gate({ children }: { children: ReactNode }) {
       if (st.setup) return setPhase({ kind: "setup" });
       if (!st.device!.approved) return setPhase({ kind: "pending", code });
       if (currentUser() || await refresh()) return setPhase({ kind: "in" });
-      setPhase({ kind: "login", code });
+      setPhase({ kind: "login" });
     } catch (err) {
       setPhase({ kind: "error", message: (err as Error).message });
     }
@@ -66,7 +66,7 @@ export function Gate({ children }: { children: ReactNode }) {
       </Screen>
     );
     case "pending": return <Pending code={phase.code} onCheck={check} />;
-    case "login": return <SignIn code={phase.code} />;
+    case "login": return <SignIn />;
     case "error": return (
       <Screen icon="error" title="Can't reach mailer">
         <p className="muted">{phase.message}</p>
@@ -106,7 +106,7 @@ function Pending({ code, onCheck }: { code: string; onCheck: () => Promise<void>
   );
 }
 
-function SignIn({ code }: { code: string }) {
+function SignIn() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -137,7 +137,6 @@ function SignIn({ code }: { code: string }) {
           {busy && <span className="spinner" aria-hidden="true" />}<span>Sign in</span>
         </button>
       </form>
-      <p className="muted small gate-foot"><Icon name="devices" size={16} />This device: <span className="mono">{code}</span>. Accounts are made by an admin.</p>
     </Screen>
   );
 }
