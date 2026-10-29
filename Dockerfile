@@ -4,7 +4,7 @@
 # The UI and server stages run on the build machine and cross-compile, so
 # multi-platform images build without emulating Node or Go.
 
-FROM --platform=$BUILDPLATFORM node:24.22.1-alpine AS ui
+FROM --platform=$BUILDPLATFORM node:26.12.1-alpine AS ui
 WORKDIR /src/internal/admin/ui
 COPY internal/admin/ui/package.json internal/admin/ui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
