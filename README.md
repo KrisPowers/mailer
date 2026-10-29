@@ -51,7 +51,6 @@ Every guide is in the dashboard under **Docs**.
 ## Contributing
 
 Issues and pull requests are welcome; see [CONTRIBUTING](.github/CONTRIBUTING.md).
-Report security problems privately as described in [SECURITY](.github/SECURITY.md).
 
 ## License
 

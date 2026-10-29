@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: markdown
     attributes:
-      value: Leave out passwords, tokens, keys and real addresses. Security problems go through the private report linked from the security policy instead.
+      value: Leave out passwords, tokens, keys and real addresses.
   - type: textarea
     id: what
     attributes:
