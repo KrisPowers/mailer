@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Button } from "../ui/Button";
 import { SearchField } from "../ui/Field";
-import { PageHeader, Toolbar } from "../ui/Page";
+import { Toolbar } from "../ui/Page";
 import { Toggle } from "../ui/Toggle";
 import { useCopy } from "../ui/Toast";
 
@@ -38,7 +38,6 @@ export function Logs() {
 
   return (
     <>
-      <PageHeader title="Logs" link={<span className={"live " + (paused ? "paused" : "")}>{paused ? "Paused" : "Live"}</span>} />
       <Toolbar actions={<>
         <Button icon={paused ? "play_arrow" : "pause"} onClick={() => setPaused(!paused)}>{paused ? "Resume" : "Pause"}</Button>
         <Button icon="content_copy" onClick={() => copy(shown.join("\n"), "Logs copied")}>Copy</Button>

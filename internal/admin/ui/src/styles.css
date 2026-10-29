@@ -572,8 +572,6 @@ input::placeholder { color: var(--text-3); }
 .first-run-review { margin-top: 16px; }
 
 /* ---- logs ---- */
-.live { font-size: 12px; font-weight: 500; color: var(--ok); }
-.live.paused { color: var(--warn); }
 .log-view {
   flex: 1; min-height: 320px; height: calc(100vh - 260px); overflow: auto; padding: 12px 16px; border-radius: var(--radius);
   background: var(--code); border: 1px solid var(--line); font: 12.5px/1.65 var(--mono);
