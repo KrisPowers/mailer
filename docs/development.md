@@ -51,6 +51,6 @@ TypeScript code. Dependabot opens updates for the actions, the base images and t
 dashboard's packages; a dashboard update needs `internal/admin/web` rebuilt and
 committed on its branch.
 
-On every push to `main` and every `v*` tag, `Release` runs `CI` and, only if it passes, publishes the image
-to `ghcr.io/krispowers/mailer` with an SBOM and provenance: `latest` from `main`,
-and the version from `v*` tags.
+On every push to `main` and every `v*` tag, `Release` runs `CI` and, only if it
+passes, publishes the image to `ghcr.io/krispowers/mailer` with an SBOM and
+provenance: `latest` from `main`, and the version from `v*` tags.
