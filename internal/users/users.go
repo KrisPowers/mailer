@@ -268,24 +268,33 @@ func WriteFileAtomic(path string, data []byte, perm os.FileMode) error {
 	return os.Rename(tmp.Name(), path)
 }
 
-// Limiter blocks an IP after repeated authentication failures.
+// Limiter blocks an IP after repeated authentication failures, and stops
+// guessing at one account from many addresses: after repeated failures for
+// an account, only addresses that signed in to it lately may try.
 type Limiter struct {
 	mu       sync.Mutex
 	failures map[string][]time.Time
+	accounts map[string][]time.Time
+	known    map[string]map[string]time.Time // account, address, last sign-in
 }
 
 const (
-	maxFailures   = 5
-	failureWindow = 15 * time.Minute
+	maxFailures        = 5
+	maxAccountFailures = 20
+	failureWindow      = 15 * time.Minute
+	knownFor           = 30 * 24 * time.Hour
 )
 
-func NewLimiter() *Limiter { return &Limiter{failures: map[string][]time.Time{}} }
+func NewLimiter() *Limiter {
+	return &Limiter{failures: map[string][]time.Time{}, accounts: map[string][]time.Time{},
+		known: map[string]map[string]time.Time{}}
+}
 
 // Blocked reports whether ip has too many recent failures.
 func (l *Limiter) Blocked(ip string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	return len(l.prune(ip)) >= maxFailures
+	return len(prune(l.failures, ip)) >= maxFailures
 }
 
 // Fail records a failed attempt from ip and reports whether ip is now
@@ -293,8 +302,48 @@ func (l *Limiter) Blocked(ip string) bool {
 func (l *Limiter) Fail(ip string) (nowBlocked bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	l.failures[ip] = append(l.prune(ip), time.Now())
+	l.failures[ip] = append(prune(l.failures, ip), time.Now())
 	return len(l.failures[ip]) == maxFailures
+}
+
+// AccountBlocked reports whether email has too many recent failures for ip
+// to try it, ip not having signed in to it in the last 30 days.
+func (l *Limiter) AccountBlocked(email, ip string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(prune(l.accounts, email)) < maxAccountFailures {
+		return false
+	}
+	seen, ok := l.known[email][ip]
+	return !ok || time.Since(seen) > knownFor
+}
+
+// AccountFail records a failed sign-in to email, an existing account.
+func (l *Limiter) AccountFail(email string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.accounts[email] = append(prune(l.accounts, email), time.Now())
+}
+
+// Succeeded records that ip signed in to email.
+func (l *Limiter) Succeeded(email, ip string) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ips := l.known[email]
+	if ips == nil {
+		ips = map[string]time.Time{}
+		l.known[email] = ips
+	}
+	now := time.Now()
+	for k, t := range ips {
+		if now.Sub(t) > knownFor {
+			delete(ips, k)
+		}
+	}
+	ips[ip] = now
 }
 
 // BlockedIPs returns each blocked address with when it's let in again.
@@ -303,7 +352,7 @@ func (l *Limiter) BlockedIPs() map[string]time.Time {
 	defer l.mu.Unlock()
 	out := map[string]time.Time{}
 	for ip := range l.failures {
-		if ts := l.prune(ip); len(ts) >= maxFailures {
+		if ts := prune(l.failures, ip); len(ts) >= maxFailures {
 			out[ip] = ts[len(ts)-maxFailures].Add(failureWindow)
 		}
 	}
@@ -317,18 +366,19 @@ func (l *Limiter) Unblock(ip string) {
 	delete(l.failures, ip)
 }
 
-func (l *Limiter) prune(ip string) []time.Time {
+// prune drops key's failures older than the window from m.
+func prune(m map[string][]time.Time, key string) []time.Time {
 	cutoff := time.Now().Add(-failureWindow)
-	ts := l.failures[ip]
+	ts := m[key]
 	i := 0
 	for i < len(ts) && ts[i].Before(cutoff) {
 		i++
 	}
 	ts = ts[i:]
 	if len(ts) == 0 {
-		delete(l.failures, ip)
+		delete(m, key)
 		return nil
 	}
-	l.failures[ip] = ts
+	m[key] = ts
 	return ts
 }
