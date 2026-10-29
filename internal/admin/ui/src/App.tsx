@@ -4,6 +4,7 @@ import { Gate } from "./gate/Gate";
 import { OverviewProvider, setupStep, useOverview } from "./overview";
 import { Access } from "./pages/Access";
 import { Accounts } from "./pages/Accounts";
+import { Docs } from "./pages/Docs";
 import { Logs } from "./pages/Logs";
 import { Queue } from "./pages/Queue";
 import { Settings } from "./pages/Settings";
@@ -70,6 +71,7 @@ function Shell() {
     accounts: <Accounts param={route.param} />,
     queue: <Queue />,
     logs: <Logs />,
+    docs: <Docs param={route.param} />,
     settings: <Settings />,
   }[route.view];
 

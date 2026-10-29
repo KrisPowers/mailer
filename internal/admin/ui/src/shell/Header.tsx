@@ -71,6 +71,7 @@ const PAGES: { view: View; label: string; icon: IconName; admin?: boolean }[] = 
   { view: "accounts", label: "Accounts", icon: "group" },
   { view: "queue", label: "Queue", icon: "outbox" },
   { view: "logs", label: "Logs", icon: "terminal" },
+  { view: "docs", label: "Docs", icon: "menu_book" },
   { view: "access", label: "Access", icon: "devices", admin: true },
   { view: "settings", label: "Settings", icon: "settings" },
 ];

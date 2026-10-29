@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-export const VIEWS = ["accounts", "queue", "logs", "access", "settings"] as const;
+export const VIEWS = ["accounts", "queue", "logs", "docs", "access", "settings"] as const;
 export type View = (typeof VIEWS)[number];
 
 export interface Route {
