@@ -8,7 +8,7 @@
 | `internal/` | Packages: IMAP and SMTP servers, store, queue, Cloudflare setup, Tailscale, tunnel, admin API |
 | `internal/admin/ui` | The dashboard: React and TypeScript, built with Vite |
 | `internal/admin/web` | The committed dashboard build the Go binary embeds |
-| `docs` | The guides, which the dashboard's Docs page builds in |
+| `docs` | The guides, which the dashboard's Docs page builds in, and `images/` for the README |
 | `internal/cloudflare/worker` | The Email Routing Worker deployed to Cloudflare |
 | `docker/` | The container's entrypoint |
 | `scripts/` | Installers and the dashboard build script |
