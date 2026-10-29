@@ -21,7 +21,7 @@ COPY --from=ui /src/internal/admin/web/ internal/admin/web/
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/mailer ./cmd/mailer
 
 FROM tailscale/tailscale:v1.104.2 AS tailscale
-FROM cloudflare/cloudflared:2026.10.2 AS cloudflared
+FROM cloudflare/cloudflared:2026.10.4 AS cloudflared
 
 FROM alpine:3.24
 RUN apk add --no-cache ca-certificates
