@@ -61,16 +61,3 @@ Tailscale auth key), dashboard accounts and devices (`auth.json`), the sign-in
 record (`signins.log`) and Tailscale's state all live in the container's `/data`,
 mapped to `%LOCALAPPDATA%\mailer\data` on Windows and `mailer/data` next to
 `compose.yaml` elsewhere. Back that folder up, and treat it as secret.
-
-## Running under a hub
-
-Mailer can run as one app of a homelab dashboard such as
-[truebrew](https://github.com/KrisPowers/truebrew), which then signs people in and
-shows Mailer's pages. The hub's compose file sets two variables on the container:
-
-| Variable | What it does |
-|---|---|
-| `HUB_KEY_FILE` | A file holding the key the hub calls this API with, naming the signed-in person and their role. Requests with it skip Mailer's own sign-in, device approval and setup |
-| `HUB_URL` | The hub's address on the container network. With remote access on, the tunnel serves the hub at the dashboard's address instead of Mailer's own page |
-
-Without them Mailer runs on its own, as described above.
