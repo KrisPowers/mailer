@@ -16,7 +16,18 @@ Self-hosted mail, zero ports.
 
 ## Install
 
-Linux and macOS:
+Homebrew (macOS and Linux):
+
+```sh
+brew tap krispowers/mailer https://github.com/KrisPowers/mailer
+brew install krispowers/mailer/mailer
+mailer start
+```
+
+`mailer update` updates it; `mailer stop`, `status`, `logs` and `open` do what
+they say.
+
+Linux and macOS, without Homebrew:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KrisPowers/mailer/main/scripts/install.sh | sh

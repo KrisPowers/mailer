@@ -1,0 +1,84 @@
+#!/bin/sh
+# The `mailer` command Homebrew installs: runs Mailer's container.
+#
+#   mailer start     pull the image and start Mailer
+#   mailer stop      stop and remove the container; mail and settings stay
+#   mailer update    pull the newest image and restart
+#   mailer status    show the container
+#   mailer logs      follow the log
+#   mailer open      open the dashboard
+#
+# compose.yaml and the data folder live in MAILER_HOME (default ~/.mailer),
+# the same place scripts/install.sh uses. MAILER_SHARE, set by the formula,
+# holds the compose.yaml installed with this command.
+set -eu
+
+dir="${MAILER_HOME:-$HOME/.mailer}"
+repo="https://raw.githubusercontent.com/KrisPowers/mailer/main"
+url="http://localhost:8080"
+
+usage() {
+    sed -n '4,9p' "$0" | sed 's/^# //'
+}
+
+need_docker() {
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "Mailer runs in Docker. Install it first: https://docs.docker.com/get-docker/" >&2
+        exit 1
+    fi
+    if ! docker compose version >/dev/null 2>&1; then
+        echo "Mailer needs Docker Compose v2 (the 'docker compose' command)." >&2
+        exit 1
+    fi
+}
+
+compose() {
+    docker compose --project-directory "$dir" -f "$dir/compose.yaml" "$@"
+}
+
+# The compose.yaml in MAILER_HOME follows the installed one, or main's
+# when run without Homebrew.
+sync() {
+    mkdir -p "$dir"
+    if [ -n "${MAILER_SHARE:-}" ] && [ -f "$MAILER_SHARE/compose.yaml" ]; then
+        cp "$MAILER_SHARE/compose.yaml" "$dir/compose.yaml"
+    else
+        curl -fsSL "$repo/compose.yaml" -o "$dir/compose.yaml"
+    fi
+}
+
+case "${1:-help}" in
+start | update)
+    need_docker
+    sync
+    compose pull
+    compose up -d
+    echo "Mailer is running. Open $url on this computer to finish setup."
+    echo "Data and settings: $dir/mailer/data"
+    ;;
+stop)
+    need_docker
+    compose down
+    ;;
+status)
+    need_docker
+    compose ps
+    ;;
+logs)
+    need_docker
+    compose logs -f
+    ;;
+open)
+    case "$(uname -s)" in
+    Darwin) open "$url" ;;
+    *) xdg-open "$url" >/dev/null 2>&1 || echo "$url" ;;
+    esac
+    ;;
+help | -h | --help)
+    usage
+    ;;
+*)
+    usage >&2
+    exit 2
+    ;;
+esac
