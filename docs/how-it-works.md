@@ -43,6 +43,12 @@ Cloudflare Email Routing hands each message to the Worker, which posts it throug
 the tunnel to Mailer. Mailer checks SPF, DKIM and DMARC, applies aliases and
 catch-alls, and files it in the account's mailbox.
 
+Mailer also flags mail as it arrives, with keywords mail apps can show:
+`$Risky` when an attachment can run code (programs, scripts, shortcuts,
+macro-enabled Office files, disk images), and `$Marketing` for bulk mail (a
+`List-Unsubscribe` header or `Precedence: bulk`). Those, and messages users flag
+in their mail apps, are listed on the dashboard's **Flagged** page.
+
 ## Limits
 
 - 25 MB per received message (Cloudflare Email Routing's limit)
