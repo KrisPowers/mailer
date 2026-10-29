@@ -5,7 +5,7 @@ import howItWorks from "../../../../../docs/how-it-works.md?raw";
 import troubleshooting from "../../../../../docs/troubleshooting.md?raw";
 import { href } from "../router";
 import { Markdown } from "../ui/Markdown";
-import { PageHeader, Tabs } from "../ui/Page";
+import { Tabs } from "../ui/Page";
 
 // The guides in docs/, the same files the repository shows, built into
 // the dashboard. param is "<guide>" or "<guide>/<heading id>".
@@ -40,7 +40,6 @@ export function Docs({ param }: { param: string }) {
 
   return (
     <>
-      <PageHeader title="Docs" />
       <Tabs<Guide> value={guide} onChange={(t) => { location.hash = href("docs", t); }}
         tabs={(Object.keys(GUIDES) as Guide[]).map((k): [Guide, string] => [k, GUIDES[k][0]])} />
       <Markdown key={guide} source={GUIDES[guide][1]} guide={guideHref} />
