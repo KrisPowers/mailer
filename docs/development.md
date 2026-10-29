@@ -43,5 +43,14 @@ CI fails a pull request whose committed build is out of date.
 docker compose up -d --build
 ```
 
-The `Release` workflow publishes the image to `ghcr.io/krispowers/mailer` from
-`main` (`latest`) and from `v*` tags.
+## CI and releases
+
+`CI` runs on every pull request: `go vet`, `go test` and `govulncheck`, an `npm audit`
+and rebuild of the dashboard, and the image build. `CodeQL` scans the Go and
+TypeScript code. Dependabot opens updates for the actions, the base images and the
+dashboard's packages; a dashboard update needs `internal/admin/web` rebuilt and
+committed on its branch.
+
+On every push to `main` and every `v*` tag, `Release` runs `CI` and, only if it
+passes, publishes the image to `ghcr.io/krispowers/mailer` with an SBOM and
+provenance: `latest` from `main`, and the version from `v*` tags.
