@@ -1,5 +1,9 @@
 # Mailer
 
+[![Release](https://github.com/KrisPowers/mailer/actions/workflows/release.yml/badge.svg)](https://github.com/KrisPowers/mailer/actions/workflows/release.yml)
+[![CodeQL](https://github.com/KrisPowers/mailer/actions/workflows/codeql.yml/badge.svg)](https://github.com/KrisPowers/mailer/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Self-hosted mail, zero ports.
 
 Mailer is a mail server for your own domains that runs in one Docker container.
@@ -91,7 +95,9 @@ sign in under **Access**, **Dashboard accounts**.
 | [Configuration](docs/configuration.md) | Settings, dashboard access, data folder, backups |
 | [Dashboard](docs/dashboard.md) | Pages and controls |
 | [Troubleshooting](docs/troubleshooting.md) | When a mail app can't sign in |
-| [Development](docs/development.md) | Building, testing, the dashboard UI |
+| [Development](docs/development.md) | Building, testing, the dashboard UI, CI and releases |
+
+Changes are listed in the [changelog](CHANGELOG.md).
 
 ## Contributing
 

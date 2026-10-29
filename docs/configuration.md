@@ -60,4 +60,5 @@ Mail, accounts, DKIM keys, settings (including the Cloudflare credentials and th
 Tailscale auth key), dashboard accounts and devices (`auth.json`), the sign-in
 record (`signins.log`) and Tailscale's state all live in the container's `/data`,
 mapped to `%LOCALAPPDATA%\mailer\data` on Windows and `mailer/data` next to
-`compose.yaml` elsewhere. Back that folder up, and treat it as secret.
+`compose.yaml` elsewhere. The credentials and keys are stored unencrypted, so anyone
+who can read that folder can use them: keep it, and every backup of it, private.
