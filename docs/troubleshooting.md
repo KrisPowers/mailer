@@ -12,7 +12,10 @@ trying, with the commands it sent first.
   server name and ports it uses against the account's **Credentials** tab.
 - **Blocked:** five failures in 15 minutes block that address. Outlook and Gmail
   sign in from their own servers, so one wrong password saved in the app can block
-  it; fix the password, then **Unblock** it from that row.
+  it; fix the password, then **Unblock** it from that row. Twenty failures for one
+  account in 15 minutes, from any addresses, block that account for every address
+  that hasn't signed in to it in the last 30 days, so it can't be guessed at from
+  many addresses at once.
 - **Test sign-in**, on the same tab, checks the password and then signs in to IMAP
   and SMTP through the public address, step by step.
 

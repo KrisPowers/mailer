@@ -423,6 +423,11 @@ func (s *session) auth(arg string) {
 		s.reply(504, "5.5.4", "unsupported mechanism")
 		return
 	}
+	if s.srv.Limiter.AccountBlocked(user, ipStr) {
+		s.audit(user, audit.Blocked, "too many failed sign-ins to this account in the last 15 minutes")
+		s.reply(454, "4.7.0", "too many failed attempts; try later")
+		return
+	}
 	email, ok := s.srv.Users.Authenticate(user, pass)
 	if !ok && s.srv.Users.LoginLocked(user) {
 		s.audit(user, audit.Locked, "sign-in is locked for this account")
@@ -433,6 +438,8 @@ func (s *session) auth(arg string) {
 		res, detail := audit.BadPassword, "wrong password"
 		if !s.srv.Users.Exists(user) {
 			res, detail = audit.UnknownUser, "no account with this username; use the full email address"
+		} else {
+			s.srv.Limiter.AccountFail(user)
 		}
 		if s.srv.Limiter.Fail(ipStr) {
 			detail += "; this address is now blocked for 15 minutes"
@@ -443,6 +450,7 @@ func (s *session) auth(arg string) {
 		return
 	}
 	s.authUser = email
+	s.srv.Limiter.Succeeded(email, ipStr)
 	s.audit(email, audit.OK, "")
 	s.reply(235, "2.7.0", "authenticated")
 }

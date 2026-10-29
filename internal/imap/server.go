@@ -550,6 +550,10 @@ func (s *session) authenticate(args []token) result {
 }
 
 func (s *session) finishAuth(user, pass string) result {
+	if s.srv.Limiter.AccountBlocked(user, s.ip) {
+		s.audit(user, audit.Blocked, "too many failed sign-ins to this account in the last 15 minutes")
+		return no("[UNAVAILABLE] too many failed logins; try later")
+	}
 	email, okAuth := s.srv.Users.Authenticate(user, pass)
 	if !okAuth {
 		if s.srv.Users.LoginLocked(user) {
@@ -559,6 +563,8 @@ func (s *session) finishAuth(user, pass string) result {
 		res, detail := audit.BadPassword, "wrong password"
 		if !s.srv.Users.Exists(user) {
 			res, detail = audit.UnknownUser, "no account with this username; use the full email address"
+		} else {
+			s.srv.Limiter.AccountFail(user)
 		}
 		if s.srv.Limiter.Fail(s.ip) {
 			detail += "; this address is now blocked for 15 minutes"
@@ -573,6 +579,7 @@ func (s *session) finishAuth(user, pass string) result {
 	}
 	s.user, s.acct = email, acct
 	s.watch, s.unwatch = acct.Watch()
+	s.srv.Limiter.Succeeded(email, s.ip)
 	s.audit(email, audit.OK, "")
 	return ok(fmt.Sprintf("[CAPABILITY %s] logged in", s.caps()))
 }
