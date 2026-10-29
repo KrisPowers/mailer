@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"strings"
@@ -121,6 +122,9 @@ func (srv *Server) handle(c net.Conn, terminated bool) {
 		s.ip = ta.IP
 	}
 	defer func() {
+		if r := recover(); r != nil {
+			srv.Log.Printf("smtp: panic serving %s: %v\n%s", s.ip, r, debug.Stack())
+		}
 		s.conn.Close()
 		if !s.audited && len(s.cmds) > 0 {
 			detail := "disconnected without signing in"

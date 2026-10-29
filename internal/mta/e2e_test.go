@@ -391,6 +391,17 @@ func TestEndToEnd(t *testing.T) {
 		}
 	}
 
+	// A literal length that would wrap the running total is refused, not
+	// allocated.
+	oc := dial(t, imapAddr, true)
+	oc.line()
+	oc.send("o1 LOGIN {1}")
+	oc.line()
+	oc.send("x {9223372036854775807}")
+	if l := oc.line(); !strings.Contains(l, "BYE") {
+		t.Errorf("huge literal: got %q", l)
+	}
+
 	// Failed logins from the real client IP (from the PROXY header) get
 	// rate-limited without locking out other addresses.
 	for i := 0; i < 5; i++ {

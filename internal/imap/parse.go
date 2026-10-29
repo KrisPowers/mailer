@@ -132,7 +132,7 @@ func (l *lexer) literal() (string, error) {
 		return "", errSyntax
 	}
 	l.i += 2
-	if l.i+n > len(l.b) {
+	if n > len(l.b)-l.i {
 		return "", errSyntax
 	}
 	s := string(l.b[l.i : l.i+n])

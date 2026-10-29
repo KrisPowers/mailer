@@ -13,6 +13,7 @@ import (
 	"io"
 	"log"
 	"net"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -115,6 +116,9 @@ func (srv *Server) handle(c net.Conn, terminated bool) {
 	s := &session{srv: srv, conn: c}
 	s.ip, _, _ = net.SplitHostPort(c.RemoteAddr().String())
 	defer func() {
+		if r := recover(); r != nil {
+			srv.Log.Printf("imap: panic serving %s: %v\n%s", s.ip, r, debug.Stack())
+		}
 		if s.unwatch != nil {
 			s.unwatch()
 		}
@@ -228,10 +232,11 @@ func (s *session) readCommand() ([]byte, error) {
 		if !isLit {
 			return buf, nil
 		}
-		total += n
-		if total > limit {
+		// Compared before adding, so a huge length can't wrap the total.
+		if n > limit-total {
 			return nil, errTooBig
 		}
+		total += n
 		if !nonSync {
 			s.writef("+ Ready for literal data\r\n")
 			s.w.Flush()
