@@ -6,18 +6,7 @@
 
 ## Install
 
-Homebrew (macOS and Linux):
-
-```sh
-brew tap krispowers/mailer https://github.com/KrisPowers/mailer
-brew install krispowers/mailer/mailer
-mailer start
-```
-
-`mailer update` updates it; `mailer stop`, `status`, `logs` and `open` do what
-they say.
-
-Linux and macOS, without Homebrew:
+Linux and macOS:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/KrisPowers/mailer/main/scripts/install.sh | sh
@@ -29,13 +18,16 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/KrisPowers/mailer/main/scripts/install.ps1 | iex
 ```
 
-Run it again to update. From a checkout instead:
+Homebrew (macOS and Linux):
 
 ```sh
-git clone https://github.com/KrisPowers/mailer.git
-cd mailer
-docker compose up -d --build
+brew tap krispowers/mailer https://github.com/KrisPowers/mailer
+brew install krispowers/mailer/mailer
+mailer start
 ```
+
+`mailer update` updates it; `mailer stop`, `status`, `logs` and `open` do what
+they say.
 
 ## Get started
 
@@ -47,11 +39,3 @@ Open <http://localhost:8080> on the computer running Mailer:
 4. **New account** (top right) lists the settings for your mail app.
 
 Every guide is in the dashboard under **Docs**.
-
-## Contributing
-
-Issues and pull requests are welcome; see [CONTRIBUTING](.github/CONTRIBUTING.md).
-
-## License
-
-[MIT](LICENSE)
