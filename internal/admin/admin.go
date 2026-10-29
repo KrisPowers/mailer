@@ -321,7 +321,7 @@ func domainDetail(d cloudflare.DomainStatus) string {
 
 func orDash(s string) string {
 	if s == "" {
-		return "—"
+		return "-"
 	}
 	return s
 }

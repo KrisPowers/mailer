@@ -15,7 +15,7 @@ function validDate(s?: string): Date | null {
 
 export function fmtTime(s?: string): string {
   const d = validDate(s);
-  return d ? d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "—";
+  return d ? d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "-";
 }
 
 export function timeAgo(s?: string): string {
