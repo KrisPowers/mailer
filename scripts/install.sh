@@ -1,13 +1,13 @@
 #!/bin/sh
 # Installs or updates Mailer on Linux and macOS:
 #
-#   curl -fsSL https://raw.githubusercontent.com/KrisPowers/Mailer/main/scripts/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/KrisPowers/mailer/main/scripts/install.sh | sh
 #
 # Downloads compose.yaml into MAILER_HOME (default ~/.mailer), pulls the
 # published image and starts the container. Running it again updates.
 set -eu
 
-repo="https://raw.githubusercontent.com/KrisPowers/Mailer/main"
+repo="https://raw.githubusercontent.com/KrisPowers/mailer/main"
 dir="${MAILER_HOME:-$HOME/.mailer}"
 
 if ! command -v docker >/dev/null 2>&1; then
