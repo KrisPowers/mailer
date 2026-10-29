@@ -584,6 +584,18 @@ input::placeholder { color: var(--text-3); }
 .log-time { color: var(--text-3); flex-shrink: 0; }
 .log-line.error { color: var(--bad); }
 
+/* ---- docs ---- */
+.doc { max-width: 780px; line-height: 1.6; }
+.doc h2 { font-size: 15px; font-weight: 500; margin: 28px 0 8px; scroll-margin-top: 16px; }
+.doc h2:first-child { margin-top: 0; }
+.doc h3 { font-size: 14px; font-weight: 500; margin: 20px 0 6px; scroll-margin-top: 16px; }
+.doc p, .doc ul, .doc ol { margin: 0 0 12px; }
+.doc p + p { margin-top: 0; }
+.doc ul, .doc ol { padding-left: 22px; }
+.doc li + li { margin-top: 6px; }
+.doc .table-wrap { margin: 4px 0 16px; }
+.doc .table td { vertical-align: top; }
+
 /* ---- narrow windows ---- */
 @media (max-width: 1150px) {
   .command { width: 280px; }

@@ -15,5 +15,6 @@ that fixes each.
 | **Accounts** | The accounts table. Each account's page has its IMAP and SMTP settings (copy all, print), controls to lock receiving, sending or sign-in, its aliases and catch-all, folders, and sign-ins with a test |
 | **Queue** | All mail, received and sent: waiting, delivered, junk, rejected, sent, bounced |
 | **Logs** | Recent server activity |
+| **Docs** | These guides: how it works, configuration, the dashboard and troubleshooting |
 | **Access** | Admins only. **Devices**: approve, name or remove the browsers allowed to reach the sign-in. **Dashboard accounts**: make admins and users, set passwords, turn sign-in off. **Sessions**: everyone signed in now, each can be ended |
 | **Settings** | DMARC strictness, saved sent copies, message size, the Cloudflare SMTP token, Cloudflare and Tailscale connections, **Server** (admins: Tailscale name and auth key, remote access, debugging) and **Security** (your password) |

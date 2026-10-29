@@ -11,6 +11,8 @@ export default defineConfig({
     modulePreload: { polyfill: false },
   },
   server: {
+    // The Docs page imports the guides from the repository's docs/.
+    fs: { allow: [".", "../../../docs"] },
     proxy: { "/api": { target: "http://127.0.0.1:8080", changeOrigin: true } },
   },
 });

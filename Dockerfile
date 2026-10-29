@@ -9,6 +9,7 @@ WORKDIR /src/internal/admin/ui
 COPY internal/admin/ui/package.json internal/admin/ui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY internal/admin/ui/ ./
+COPY docs/ /src/docs/
 RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
