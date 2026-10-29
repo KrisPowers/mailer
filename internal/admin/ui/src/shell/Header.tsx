@@ -25,7 +25,6 @@ export function Header({ onToggleNav }: { onToggleNav: () => void }) {
       <CommandSearch />
       <div className="header-icons">
         <IconButton icon="key" label="Mail app settings" onClick={() => open(<MailSettings />)} />
-        <a className="icon-btn" href={href("settings")} aria-label="Settings" data-tip="Settings"><Icon name="settings" /></a>
         <UserMenu />
       </div>
       <button type="button" className="header-btn"
