@@ -10,7 +10,7 @@
 class Mailer < Formula
   desc "Self-hosted mail server for your own domains, with zero open ports"
   homepage "https://github.com/KrisPowers/mailer"
-  url "https://github.com/KrisPowers/mailer.git", tag: "v0.1.0"
+  url "https://github.com/KrisPowers/mailer.git", tag: "v1.0.0"
   license "MIT"
   head "https://github.com/KrisPowers/mailer.git", branch: "main"
 
