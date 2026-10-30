@@ -49,12 +49,12 @@ func (f *fakeResolver) LookupAddr(context.Context, string) ([]string, error) {
 func TestSPF(t *testing.T) {
 	r := &fakeResolver{
 		txt: map[string][]string{
-			"example.com":    {"v=spf1 ip4:192.0.2.0/24 include:_spf.other.net mx -all"},
-			"_spf.other.net": {"v=spf1 ip4:198.51.100.7 ~all"},
-			"soft.example":   {"v=spf1 ~all"},
-			"redir.example":  {"v=spf1 redirect=example.com"},
-			"macro.example":  {"v=spf1 exists:%{i}._spf.macro.example -all"},
-			"broken.example": {"v=spf1 foo:bar -all"},
+			"example.com":      {"v=spf1 ip4:192.0.2.0/24 include:_spf.example.net mx -all"},
+			"_spf.example.net": {"v=spf1 ip4:198.51.100.7 ~all"},
+			"soft.example":     {"v=spf1 ~all"},
+			"redir.example":    {"v=spf1 redirect=example.com"},
+			"macro.example":    {"v=spf1 exists:%{i}._spf.macro.example -all"},
+			"broken.example":   {"v=spf1 foo:bar -all"},
 		},
 		mx: map[string][]*net.MX{"example.com": {{Host: "mx.example.com.", Pref: 10}}},
 		ip: map[string][]string{"mx.example.com": {"203.0.113.5"}, "203.0.113.9._spf.macro.example": {"127.0.0.2"}},
@@ -88,7 +88,7 @@ func TestDKIMRoundTripAndDMARC(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Signer{Domain: "example.com", Selector: "mail", Key: key}
-	msg := []byte("From: Me <me@example.com>\r\nTo: you@other.net\r\nSubject:  Hello   there\r\n" +
+	msg := []byte("From: Me <me@example.com>\r\nTo: you@example.net\r\nSubject:  Hello   there\r\n" +
 		"Date: Mon, 1 Jan 2024 00:00:00 +0000\r\n\r\nBody line  one \r\n.dot line\r\n\r\n\r\n")
 	sig, err := s.Sign(msg)
 	if err != nil {

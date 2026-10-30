@@ -59,8 +59,8 @@ func TestSending(t *testing.T) {
 	}
 
 	relay := &Relay{Setup: s}
-	msg := []byte("From: me@example.com\r\nTo: ok@other.net\r\nSubject: hi\r\n\r\nhello\r\n")
-	res := relay.Deliver(ctx, "other.net", "me@example.com", []string{"ok@other.net", "bad@other.net"}, msg)
+	msg := []byte("From: me@example.com\r\nTo: ok@example.net\r\nSubject: hi\r\n\r\nhello\r\n")
+	res := relay.Deliver(ctx, "example.net", "me@example.com", []string{"ok@example.net", "bad@example.net"}, msg)
 	if len(fake.sent) != 1 || fake.sent[0]["mime_message"] != string(msg) || fake.sent[0]["from"] != "me@example.com" {
 		t.Fatalf("send_raw request: %+v", fake.sent)
 	}
@@ -75,9 +75,9 @@ func TestSending(t *testing.T) {
 	}{
 		"too big":        {"me@example.com", append(bytes.Repeat([]byte("x"), MaxSendBytes), msg...)},
 		"not UTF-8":      {"me@example.com", append([]byte("X-Bad: \xff\r\n"), msg...)},
-		"unknown domain": {"me@elsewhere.net", msg},
+		"unknown domain": {"me@elsewhere.example", msg},
 	} {
-		res := relay.Deliver(ctx, "other.net", c.from, []string{"ok@other.net"}, c.data)
+		res := relay.Deliver(ctx, "example.net", c.from, []string{"ok@example.net"}, c.data)
 		if res[0].Err == nil || !res[0].Permanent {
 			t.Errorf("%s: %+v", name, res)
 		}

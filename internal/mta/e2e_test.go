@@ -44,13 +44,13 @@ func (f *fakeDNS) LookupTXT(_ context.Context, n string) ([]string, error) {
 	return nil, nf(n)
 }
 func (f *fakeDNS) LookupMX(_ context.Context, n string) ([]*net.MX, error) {
-	if n == "other.net" {
-		return []*net.MX{{Host: "mx.other.net.", Pref: 10}}, nil
+	if n == "example.net" {
+		return []*net.MX{{Host: "mx.example.net.", Pref: 10}}, nil
 	}
 	return nil, nf(n)
 }
 func (f *fakeDNS) LookupIPAddr(_ context.Context, h string) ([]net.IPAddr, error) {
-	if strings.TrimSuffix(h, ".") == "mx.other.net" {
+	if strings.TrimSuffix(h, ".") == "mx.example.net" {
 		return []net.IPAddr{{IP: net.ParseIP("127.0.0.1")}}, nil
 	}
 	return nil, nf(h)
@@ -196,7 +196,7 @@ func TestEndToEnd(t *testing.T) {
 
 	// Fake remote MX.
 	rec := &recorder{}
-	remote := &smtp.Server{Hostname: func() string { return "mx.other.net" }, Mode: smtp.ModeMX,
+	remote := &smtp.Server{Hostname: func() string { return "mx.example.net" }, Mode: smtp.ModeMX,
 		Users: db, Limiter: lim, MaxSize: 10 << 20, Backend: rec, Log: logger}
 	remoteAddr := listen(t, remote.Serve, false)
 
@@ -332,9 +332,9 @@ func TestEndToEnd(t *testing.T) {
 	sc2.smtpCmd("AUTH PLAIN "+auth, "235")
 	sc2.smtpCmd("MAIL FROM:<ceo@bigcorp.com>", "553")
 	sc2.smtpCmd("MAIL FROM:<hello@example.com>", "250")
-	sc2.smtpCmd("RCPT TO:<bob@other.net>", "250")
+	sc2.smtpCmd("RCPT TO:<bob@example.net>", "250")
 	sc2.smtpCmd("DATA", "354")
-	sc2.send("From: Me <hello@example.com>\r\nTo: bob@other.net\r\nSubject: Re: hi\r\n\r\nReply body\r\n.")
+	sc2.send("From: Me <hello@example.com>\r\nTo: bob@example.net\r\nSubject: Re: hi\r\n\r\nReply body\r\n.")
 	sc2.smtpCmd("", "250")
 	sc2.smtpCmd("QUIT", "221")
 
@@ -352,7 +352,7 @@ func TestEndToEnd(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	out := rec.msgs[0]
-	if out.From != "hello@example.com" || out.To[0] != "bob@other.net" {
+	if out.From != "hello@example.com" || out.To[0] != "bob@example.net" {
 		t.Errorf("envelope %+v", out)
 	}
 	// A receive lock refuses mail for the account and its aliases.
@@ -367,7 +367,7 @@ func TestEndToEnd(t *testing.T) {
 	for _, e := range mailLog.Recent() {
 		log = append(log, e.Dir+" "+e.Status+" "+e.To)
 	}
-	for _, want := range []string{"in rejected nobody@example.com", "in delivered hello@example.com", "out sent bob@other.net"} {
+	for _, want := range []string{"in rejected nobody@example.com", "in delivered hello@example.com", "out sent bob@example.net"} {
 		if !slices.Contains(log, want) {
 			t.Errorf("mail log missing %q: %q", want, log)
 		}

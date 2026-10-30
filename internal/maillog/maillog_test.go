@@ -9,9 +9,9 @@ func TestLog(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "mail.log")
 	l := Open(path)
 	for range keep + 5 {
-		l.Add(Entry{Dir: In, From: "a@other.net", To: "me@example.com", Status: Delivered})
+		l.Add(Entry{Dir: In, From: "a@example.net", To: "me@example.com", Status: Delivered})
 	}
-	l.Add(Entry{Dir: Out, From: "me@example.com", To: "b@other.net", Status: Bounced, Detail: "no such user"})
+	l.Add(Entry{Dir: Out, From: "me@example.com", To: "b@example.net", Status: Bounced, Detail: "no such user"})
 
 	// A restart reads the same entries back, newest first.
 	for _, l := range []*Log{l, Open(path)} {

@@ -19,7 +19,7 @@ func TestFlagged(t *testing.T) {
 	}
 	acct, _ := s.Store.Account("me@example.com")
 	msg := func(subject string) []byte {
-		return []byte("From: a@other.net\r\nSubject: " + subject + "\r\n\r\nhi\r\n")
+		return []byte("From: a@example.net\r\nSubject: " + subject + "\r\n\r\nhi\r\n")
 	}
 	acct.Append("INBOX", msg("plain"), nil, time.Now())
 	acct.Append("INBOX", msg("starred"), []string{store.FlagFlagged}, time.Now())

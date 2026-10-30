@@ -195,7 +195,7 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
 		f.sent = append(f.sent, body)
-		ok(map[string]any{"delivered": []string{"ok@other.net"}, "permanent_bounces": []string{"BAD@other.net"}, "queued": []string{}})
+		ok(map[string]any{"delivered": []string{"ok@example.net"}, "permanent_bounces": []string{"BAD@example.net"}, "queued": []string{}})
 	default:
 		http.Error(w, "unexpected "+r.Method+" "+p, 404)
 	}
