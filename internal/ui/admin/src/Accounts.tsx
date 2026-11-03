@@ -5,7 +5,7 @@ import { Icon, type IconName } from "../../shared/Icon";
 import { Avatar, Callout, Card, Copy, MoreMenu, PageHead, PasswordField, Row, SaveSwitch, SubNav, Switch, Tally, TextField, useNotify, Welcome } from "../../shared/ui";
 import { api } from "./api";
 import { failing, useOverview } from "./overview";
-import { CredentialCards, credentialText, PROTO, RESULTS, Steps } from "./parts";
+import { CredentialCards, credentialText, PROTO, RESULTS, Steps, webmailURL } from "./parts";
 import { accountHref, go } from "./route";
 import type { Account, Aliases, Locks, SignIns, Step } from "./types";
 
@@ -212,6 +212,7 @@ const ACCESS: { key: keyof Locks; title: string; sub: string }[] = [
 ];
 
 function Overview({ account: a, onChanged, onPassword }: { account: Account; onChanged: () => Promise<void>; onPassword: (pw: string) => Promise<void> }) {
+  const { ov } = useOverview();
   const [editing, setEditing] = useState(false);
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -228,6 +229,12 @@ function Overview({ account: a, onChanged, onPassword }: { account: Account; onC
         { label: "Stored", value: fmtSize(a.size) },
         { label: "Folders", value: (a.mailboxes?.length ?? 0).toLocaleString() },
       ]} />
+      <Card title="Webmail" sub="Where this account reads and writes its mail in a browser, signing in with its address and password.">
+        <Row title={<a href={webmailURL(ov)} target="_blank" rel="noopener noreferrer">{webmailURL(ov).replace(/^https?:\/\//, "")}</a>}
+          sub={ov?.webmail_host ? "From anywhere, through the Cloudflare Tunnel" : "On this computer. Settings, Server serves it from anywhere"}>
+          <a className="btn" href={webmailURL(ov)} target="_blank" rel="noopener noreferrer"><Icon name="open_in_new" size={18} />Open</a>
+        </Row>
+      </Card>
       <Card title="Access" sub="Each switch stops one thing and leaves the others working.">
         {ACCESS.map((c) => (
           <Row key={c.key} title={c.title} sub={c.sub}>

@@ -21,7 +21,8 @@ jobs:
       - run: go test ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
-  # The dashboard builds are committed (internal/admin/web) so building
+  # The dashboard builds are committed (internal/admin/web and
+  # internal/webmail/web) so building
   # the server never needs Node. This rebuilds them from internal/ui,
   # publishes the result as the "web" artifact and fails if the committed
   # copy is out of date.
@@ -43,13 +44,15 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web
-          path: internal/admin/web
+          path: |
+            internal/admin/web
+            internal/webmail/web
       - name: Committed build is current
         run: |
-          changes=$(git status --porcelain -- ../admin/web)
+          changes=$(git status --porcelain -- ../admin/web ../webmail/web)
           if [ -n "$changes" ]; then
             echo "$changes"
-            echo "::error::internal/admin/web is stale; commit the 'web' artifact from this run"
+            echo "::error::a committed dashboard build is stale; commit the 'web' artifact from this run"
             exit 1
           fi
 

@@ -25,7 +25,8 @@ class Mailer < Formula
       Mailer runs in Docker: Docker Desktop on macOS, or Docker Engine with
       Compose v2 on Linux. Then:
         mailer start
-      and open http://localhost:8080 to finish setup.
+      and open http://localhost:8080 to finish setup. The webmail is at
+      http://localhost:8081.
     EOS
   end
 

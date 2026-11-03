@@ -37,6 +37,10 @@ type MTA struct {
 	DKIM func(domain string) *mailauth.Signer
 	Log  *log.Logger
 	Mail *maillog.Log // what happened to each message, for the dashboard
+	// Rules files a message for user by the account's own rules, set in
+	// the webmail: the folder it goes to ("" keeps INBOX), flags to add,
+	// and folders it's copied to.
+	Rules func(user string, data []byte) (folder string, flags []string, copies []string)
 
 	lastInbound atomic.Int64 // unix seconds
 }
@@ -101,14 +105,36 @@ func (m *MTA) deliverLocal(user string, junk bool, data []byte) error {
 	if err != nil {
 		return err
 	}
-	box := "INBOX"
-	if junk {
+	box, flags := "INBOX", autoFlags(data)
+	var copies []string
+	switch {
+	case junk:
 		if j := acct.FindSpecialUse(`\Junk`); j != "" {
 			box = j
 		}
+	case m.Rules != nil:
+		folder, extra, also := m.Rules(user, data)
+		if folder != "" {
+			box = folder
+		}
+		flags = append(flags, extra...)
+		copies = also
 	}
-	_, _, err = acct.Append(box, data, autoFlags(data), time.Now())
-	return err
+	if _, _, err = acct.Append(box, data, flags, time.Now()); err != nil {
+		if box == "INBOX" {
+			return err
+		}
+		// The rule's folder is gone since: INBOX it is.
+		if _, _, err = acct.Append("INBOX", data, flags, time.Now()); err != nil {
+			return err
+		}
+	}
+	for _, c := range copies {
+		if c != box {
+			acct.Append(c, data, flags, time.Now())
+		}
+	}
+	return nil
 }
 
 // autoFlags marks risky attachments and bulk mail, for mail apps and the

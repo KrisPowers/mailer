@@ -16,6 +16,8 @@ folder:
 | Name on your tailnet | Setup, Settings, Server | Mail apps connect to `<name>.<tailnet>.ts.net`. Default `mail` |
 | Tailscale auth key | Setup, Settings, Server | A [Tailscale auth key](https://tailscale.com/kb/1085/auth-keys) that signs the server in without the dashboard link. Never shown again once saved |
 | Open the dashboard from anywhere | Setup, Settings, Server | Serves the dashboard at `<address>.<primary domain>` through the Cloudflare Tunnel. Default address `mail-admin` |
+| Open the webmail from anywhere | Settings, Server | Serves the [webmail](webmail.md) at `<address>.<primary domain>` through the Cloudflare Tunnel. Default address `webmail` |
+| Mail apps | Each account's page | Lets Outlook and other IMAP and SMTP apps sign in to that account. Off for new accounts; the webmail works either way |
 | Log every mail app command | Settings, Server | Logs every command mail apps send, with passwords hidden |
 | IMAP extensions advertised | Settings, Server | Overrides the IMAP extensions advertised, to find one a mail app can't handle |
 
@@ -45,14 +47,15 @@ accounts and settings are kept.
 
 ## Ports
 
-`compose.yaml` publishes two ports on `127.0.0.1` only:
+`compose.yaml` publishes three ports on `127.0.0.1` only:
 
-- `8080`: the dashboard
+- `8080`: the admin dashboard
+- `8081`: the webmail
 - `8877`: where Cloudflare's sign-in comes back to
 
-Mail ports are never published. The internet reaches them, and the dashboard when
-remote access is on, through the Cloudflare Tunnel and Tailscale Funnel inside the
-container.
+Mail ports are never published. The internet reaches them, and the dashboard and
+the webmail when each is served from anywhere, through the Cloudflare Tunnel and
+Tailscale Funnel inside the container.
 
 ## Data and backups
 

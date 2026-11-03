@@ -414,6 +414,8 @@ func (s *Server) overview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"pending_devices":  waiting,
 		"dashboard_host":   cfg.DashboardHost(),
+		"webmail_host":     cfg.WebmailHost(),
+		"webmail_port":     cfg.Ports.Webmail,
 		"domain":           cfg.Domain(),
 		"domains":          cfg.Domains,
 		"hostname":         cfg.Hostname,

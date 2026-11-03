@@ -1,12 +1,11 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { Dropdown, type Option } from "../../shared/Dropdown";
 import { fmtTime, message, plural } from "../../shared/format";
 import { Icon, type IconName } from "../../shared/Icon";
-import { loadLook, saveLook, type Look } from "../../shared/prefs";
+import { Appearance } from "../../shared/Appearance";
 import { Callout, Card, PasswordField, Row, SaveField, SaveSwitch, useNotify, ValueRow } from "../../shared/ui";
 import { api } from "./api";
 import { health, useOverview } from "./overview";
-import { TailscaleOutcome, useEnableTailscale } from "./parts";
+import { TailscaleOutcome, useEnableTailscale, webmailHere } from "./parts";
 import { Sessions } from "./People";
 import { useUser } from "./session";
 import { RepairOutcome, useRepair } from "./Status";
@@ -165,6 +164,15 @@ function Server() {
         <ValueRow title="Dashboard address" mono value={s.remote_subdomain} onSave={(v) => save({ remote_subdomain: v })}
           hint={<>The name under <code>{ov?.domain || "your-domain"}</code> it's served at</>} />
       </Card>
+      <Card title="Webmail" sub="Where accounts read and write their mail in a browser. Each visit signs in with the account's address and password.">
+        <Row title="Open the webmail from anywhere" sub={s.webmail_enabled && ov?.webmail_host
+          ? <>Served at <a href={"https://" + ov.webmail_host} target="_blank" rel="noopener noreferrer">{ov.webmail_host}</a> through the Cloudflare Tunnel</>
+          : <>On this computer at <a href={webmailHere()} target="_blank" rel="noopener noreferrer">{webmailHere()}</a>. On, it's served through the Cloudflare Tunnel too</>}>
+          <SaveSwitch label="Open the webmail from anywhere" on={s.webmail_enabled} onSave={(v) => save({ webmail_enabled: v })} />
+        </Row>
+        <ValueRow title="Webmail address" mono value={s.webmail_subdomain} onSave={(v) => save({ webmail_subdomain: v })}
+          hint={<>The name under <code>{ov?.domain || "your-domain"}</code> it's served at</>} />
+      </Card>
       <Card title="Debugging" sub="For tracking down a mail app that won't sign in or sync. Each applies to new connections.">
         <Row title="Log every mail app command" sub="Passwords are hidden.">
           <SaveSwitch label="Log every mail app command" on={s.trace} onSave={(v) => save({ trace: v })} />
@@ -173,41 +181,6 @@ function Server() {
           hint="Replace the set to find an extension a mail app can't handle" />
       </Card>
     </>
-  );
-}
-
-const THEMES: Option<string>[] = [
-  { value: "system", label: "System", hint: "Follow this computer", icon: "brightness_auto" },
-  { value: "light", label: "Light", icon: "light_mode" },
-  { value: "dark", label: "Dark", icon: "dark_mode" },
-];
-const MOTION: Option<string>[] = [
-  { value: "system", label: "System", hint: "Follow this computer's setting" },
-  { value: "reduce", label: "Reduced", hint: "No sliding or fading" },
-];
-const DENSITY: Option<string>[] = [
-  { value: "system", label: "Comfortable", hint: "Roomy rows" },
-  { value: "compact", label: "Compact", hint: "More rows on screen" },
-];
-
-export function Appearance() {
-  const [look, setLook] = useState(() => ({ theme: loadLook("theme"), motion: loadLook("motion"), density: loadLook("density") }));
-  const set = (key: Look) => (value: string) => {
-    saveLook(key, value);
-    setLook((l) => ({ ...l, [key]: value }));
-  };
-  return (
-    <Card title="Look and feel" sub="Kept in this browser.">
-      <Row title="Theme" sub="Light, dark, or whatever this computer is set to">
-        <Dropdown label="Theme" value={look.theme} options={THEMES} onChange={set("theme")} />
-      </Row>
-      <Row title="Motion" sub="Animations as pages change">
-        <Dropdown label="Motion" value={look.motion} options={MOTION} onChange={set("motion")} />
-      </Row>
-      <Row title="Density" sub="How tightly lists are packed">
-        <Dropdown label="Density" value={look.density} options={DENSITY} onChange={set("density")} />
-      </Row>
-    </Card>
   );
 }
 

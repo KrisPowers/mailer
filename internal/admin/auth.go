@@ -514,8 +514,9 @@ func (s *Server) removeDevice(w http.ResponseWriter, r *http.Request) {
 // ---- admin: container settings ----
 
 // serverView is what used to be the container's environment: the
-// Tailscale name and key, remote access and the debugging switches. The
-// auth key is never sent back, only whether one is set.
+// Tailscale name and key, remote access to the dashboard and the webmail,
+// and the debugging switches. The auth key is never sent back, only
+// whether one is set.
 type serverView struct {
 	TailscaleHostname string  `json:"tailscale_hostname"`
 	AuthKeySet        bool    `json:"auth_key_set"`
@@ -523,6 +524,9 @@ type serverView struct {
 	RemoteEnabled     bool    `json:"remote_enabled"`
 	RemoteSubdomain   string  `json:"remote_subdomain"`
 	DashboardHost     string  `json:"dashboard_host"`
+	WebmailEnabled    bool    `json:"webmail_enabled"`
+	WebmailSubdomain  string  `json:"webmail_subdomain"`
+	WebmailHost       string  `json:"webmail_host"`
 	Trace             bool    `json:"trace"`
 	IMAPCaps          string  `json:"imap_caps"`
 	Warning           string  `json:"warning,omitempty"`
@@ -533,8 +537,13 @@ func viewOf(c config.Config) serverView {
 	if host == "" && c.Domain() != "" {
 		host = c.Remote.Subdomain + "." + c.Domain()
 	}
+	webmail := c.WebmailHost()
+	if webmail == "" && c.Domain() != "" {
+		webmail = c.Webmail.Subdomain + "." + c.Domain()
+	}
 	return serverView{TailscaleHostname: c.Tailscale.Hostname, AuthKeySet: c.Tailscale.AuthKey != "",
 		RemoteEnabled: c.Remote.Enabled, RemoteSubdomain: c.Remote.Subdomain, DashboardHost: host,
+		WebmailEnabled: c.Webmail.Enabled, WebmailSubdomain: c.Webmail.Subdomain, WebmailHost: webmail,
 		Trace: c.Trace, IMAPCaps: c.IMAPCaps}
 }
 
@@ -558,6 +567,15 @@ func (s *Server) putServer(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, err)
 		return
 	}
+	mailSub, err := checkLabel("The webmail's subdomain", v.WebmailSubdomain)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if mailSub == sub {
+		writeErr(w, 400, errors.New("the dashboard and the webmail need different addresses"))
+		return
+	}
 	before := s.Cfg.Get()
 	if err := s.Cfg.Update(func(c *config.Config) {
 		c.Tailscale.Hostname = host
@@ -565,6 +583,7 @@ func (s *Server) putServer(w http.ResponseWriter, r *http.Request) {
 			c.Tailscale.AuthKey = strings.TrimSpace(*v.AuthKey)
 		}
 		c.Remote = config.Remote{Enabled: v.RemoteEnabled, Subdomain: sub}
+		c.Webmail = config.Webmail{Enabled: v.WebmailEnabled, Subdomain: mailSub}
 		c.Trace = v.Trace
 		c.IMAPCaps = strings.Join(strings.Fields(v.IMAPCaps), " ")
 	}); err != nil {
@@ -578,11 +597,11 @@ func (s *Server) putServer(w http.ResponseWriter, r *http.Request) {
 		tailscale.Up(context.Background(), after.Tailscale.Hostname, after.Tailscale.AuthKey, s.Log.Printf)
 	}
 	out := viewOf(after)
-	if after.DashboardHost() != before.DashboardHost() {
-		s.Log.Printf("admin: %s set remote dashboard access to %q", who, after.DashboardHost())
+	if after.DashboardHost() != before.DashboardHost() || after.WebmailHost() != before.WebmailHost() {
+		s.Log.Printf("admin: %s set remote access to %q (dashboard) and %q (webmail)", who, after.DashboardHost(), after.WebmailHost())
 		switch {
 		case !after.Connected():
-			if after.Remote.Enabled {
+			if after.Remote.Enabled || after.Webmail.Enabled {
 				out.Warning = "Remote access starts once Cloudflare is connected."
 			}
 		default:

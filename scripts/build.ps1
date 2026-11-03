@@ -1,5 +1,5 @@
-# Rebuilds the dashboards from internal/ui into internal/admin/web, the
-# copy the Go binary embeds for `go vet`, `go test` and builds outside
+# Rebuilds the dashboards from internal/ui into internal/admin/web and
+# internal/webmail/web, the copies the Go binary embeds for `go vet`, `go test` and builds outside
 # Docker. The container image builds its own copy (see Dockerfile). Needs
 # Node.js.
 
@@ -16,4 +16,4 @@ Check "npm ci"
 npm run build
 Check "dashboard build"
 
-Write-Host "Built internal\admin\web"
+Write-Host "Built internal\admin\web and internal\webmail\web"

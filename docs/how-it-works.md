@@ -1,8 +1,8 @@
 # How it works
 
-Mailer runs as one Docker container: the mail server with its web dashboard,
-`cloudflared` for the Cloudflare Tunnel, and Tailscale for Funnel. Nothing on your
-router or computer is opened; the dashboard is published to `127.0.0.1`, and
+Mailer runs as one Docker container: the mail server with its admin dashboard and
+webmail, `cloudflared` for the Cloudflare Tunnel, and Tailscale for Funnel. Nothing
+on your router or computer is opened; the dashboard is published to `127.0.0.1`, and
 served through the tunnel too when remote access is on. Either way it needs an
 approved device and a signed-in account (see
 [Configuration](configuration.md#dashboard-access)).
@@ -24,6 +24,14 @@ approved device and a signed-in account (see
 - **Tailscale Funnel:** IMAP on port 443 and sending on port 8443, with
   Tailscale's TLS certificate and the real client IP passed through for rate
   limiting.
+
+## Reading and writing
+
+Each account reads and writes its mail in the [webmail](webmail.md), on its own
+port beside the admin dashboard, with folders, signatures, categories, flags and
+rules that file mail as it arrives. Outlook and other mail apps reach the same
+mailbox over IMAP and SMTP through Tailscale Funnel, for accounts whose **Mail
+apps** switch is on.
 
 ## Sending
 

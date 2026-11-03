@@ -1,4 +1,4 @@
-# Mailer's container: the mail server with its web dashboard, cloudflared
+# Mailer's container: the mail server with its admin dashboard and webmail, cloudflared
 # (inbound mail through the Cloudflare Tunnel) and Tailscale (Funnel for
 # mail apps). Nothing needs publishing beyond the dashboard.
 # The UI and server stages run on the build machine and cross-compile, so
@@ -19,6 +19,7 @@ COPY go.mod ./
 COPY cmd/ cmd/
 COPY internal/ internal/
 COPY --from=ui /src/internal/admin/web/ internal/admin/web/
+COPY --from=ui /src/internal/webmail/web/ internal/webmail/web/
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags "-s -w" -o /out/mailer ./cmd/mailer
 
 FROM tailscale/tailscale:v1.104.2 AS tailscale
@@ -32,6 +33,6 @@ COPY --from=build /out/mailer /usr/local/bin/
 COPY docker/entrypoint.sh /entrypoint.sh
 ENV MAILER_DATA=/data MAILER_LISTEN=0.0.0.0
 VOLUME /data
-# Dashboard, and the Cloudflare sign-in callback.
-EXPOSE 8080 8877
+# Admin dashboard, webmail, and the Cloudflare sign-in callback.
+EXPOSE 8080 8081 8877
 ENTRYPOINT ["/bin/sh", "/entrypoint.sh"]

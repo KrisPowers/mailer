@@ -18,8 +18,8 @@ pages, with a count beside each one that has something waiting.
 | **Logs** | Recent server activity, with a filter and errors only |
 | **Devices** | Admins only. Approve, name or remove the browsers allowed to reach the sign-in |
 | **People** | Admins only. The accounts that sign in to the dashboard, as admins or users: make them, set passwords, turn sign-in off. Below, everyone signed in now, each session can be ended |
-| **Settings** | Mail handling (DMARC strictness, sent copies, message size), Sending (the Cloudflare SMTP token), Connections (Cloudflare and Tailscale), **Server** (admins: Tailscale name and auth key, remote access, debugging), Appearance, and Account (your password and sessions) |
-| **Help** | These guides: how it works, configuration, the dashboard and troubleshooting |
+| **Settings** | Mail handling (DMARC strictness, sent copies, message size), Sending (the Cloudflare SMTP token), Connections (Cloudflare and Tailscale), **Server** (admins: Tailscale name and auth key, remote access to the dashboard and the [webmail](webmail.md), debugging), Appearance, and Account (your password and sessions) |
+| **Help** | These guides: how it works, configuration, the dashboard, the webmail and troubleshooting |
 
 Until Cloudflare, Tailscale and a first account are set up, the sidebar has
 **Finish setup**, which walks through them.
