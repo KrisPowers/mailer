@@ -117,6 +117,18 @@ export function TailscaleOutcome({ result }: { result: TailscaleResult | null })
   );
 }
 
+// webmailHere is the webmail on this computer, beside this dashboard.
+export function webmailHere(port = 8081) {
+  return `${location.protocol}//${location.hostname}:${port}`;
+}
+
+// webmailURL is where an account reads its mail: the public address when the
+// webmail is served from anywhere, otherwise on this computer.
+export function webmailURL(ov: { webmail_host: string; webmail_port: number } | null) {
+  if (ov?.webmail_host) return "https://" + ov.webmail_host;
+  return webmailHere(ov?.webmail_port || 8081);
+}
+
 // What each sign-in result means, and what to change.
 export const RESULTS: Record<string, { label: string; tone: Health; fix: string }> = {
   ok: { label: "Signed in", tone: "ok", fix: "" },

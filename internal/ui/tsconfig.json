@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["shared", "admin/src", "vite.config.ts"]
+  "include": ["shared", "admin/src", "webmail/src", "vite.config.ts"]
 }

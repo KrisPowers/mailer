@@ -37,6 +37,7 @@ type Config struct {
 	Tailscale  Tailscale  `json:"tailscale"`
 	Ports      Ports      `json:"ports"`
 	Remote     Remote     `json:"remote"`
+	Webmail    Webmail    `json:"webmail"`
 
 	// Trace logs every command mail apps send (passwords hidden), and
 	// IMAPCaps replaces the IMAP extensions advertised; both are for
@@ -106,10 +107,28 @@ func (c *Config) DashboardHost() string {
 	return c.Remote.Subdomain + "." + c.Domain()
 }
 
+// Webmail serves the webmail on <Subdomain>.<primary domain> through the
+// Cloudflare Tunnel, so accounts can read their mail from anywhere. Each
+// visit still signs in with the account's address and password.
+type Webmail struct {
+	Enabled   bool   `json:"enabled"`
+	Subdomain string `json:"subdomain"`
+}
+
+// WebmailHost is the webmail's public address, or "" when it's only
+// reachable from this computer.
+func (c *Config) WebmailHost() string {
+	if !c.Webmail.Enabled || c.Webmail.Subdomain == "" || c.Domain() == "" {
+		return ""
+	}
+	return c.Webmail.Subdomain + "." + c.Domain()
+}
+
 // Ports are loopback-only listeners. Nothing listens publicly: Cloudflare
 // Tunnel and Tailscale Funnel connect to these locally.
 type Ports struct {
 	Admin      int `json:"admin"`
+	Webmail    int `json:"webmail"`
 	Inbound    int `json:"inbound"`    // HTTP endpoint the Worker posts mail to
 	IMAP       int `json:"imap"`       // Funnel :443 -> here (TLS terminated by Tailscale)
 	Submission int `json:"submission"` // Funnel :8443 -> here
@@ -179,6 +198,12 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Ports.Admin == 0 {
 		c.Ports.Admin = 8080
+	}
+	if c.Ports.Webmail == 0 {
+		c.Ports.Webmail = 8081
+	}
+	if c.Webmail.Subdomain == "" {
+		c.Webmail.Subdomain = "webmail"
 	}
 	if c.Ports.Inbound == 0 {
 		c.Ports.Inbound = 8025

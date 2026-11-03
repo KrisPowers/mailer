@@ -6,7 +6,9 @@
 |---|---|
 | `cmd/mailer` | The server's entry point |
 | `internal/` | Packages: IMAP and SMTP servers, store, queue, Cloudflare setup, Tailscale, tunnel, admin API |
-| `internal/ui` | The dashboards: React and TypeScript, built with Vite. `shared/` holds the parts every dashboard uses, `admin/` the admin dashboard |
+| `internal/ui` | The dashboards: React and TypeScript, built with Vite. `shared/` holds the parts both use, `admin/` the admin dashboard, `webmail/` the webmail |
+| `internal/webmail` | The webmail's server: sessions, folders, messages, sending, drafts, settings and rules |
+| `internal/webmail/web` | The committed webmail build the Go binary embeds |
 | `internal/admin/web` | The committed dashboard build the Go binary embeds |
 | `docs` | The guides, which the dashboard's Docs page builds in, and `images/` for the README |
 | `internal/cloudflare/worker` | The Email Routing Worker deployed to Cloudflare |
@@ -33,8 +35,9 @@ changing the UI, with `scripts/build.ps1` or:
 ```sh
 cd internal/ui
 npm install
-npm run dev:admin   # hot reload on :5173, proxies /api to a running mailer on :8080
-npm run build   # type-check, then rebuild internal/admin/web; commit the result
+npm run dev:admin     # hot reload on :5173, proxies /api to a running mailer on :8080
+npm run dev:webmail   # the same for the webmail, proxied to :8081
+npm run build         # type-check, then rebuild internal/admin/web and internal/webmail/web; commit both
 ```
 
 CI fails a pull request whose committed build is out of date.

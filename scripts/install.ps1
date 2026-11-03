@@ -34,5 +34,6 @@
 
     Write-Host ''
     Write-Host 'Mailer is running. Open http://localhost:8080 on this computer to finish setup and make the admin account.' -ForegroundColor Green
+    Write-Host 'The webmail is at http://localhost:8081.'
     Write-Host "Data and settings: $(Join-Path $env:LOCALAPPDATA 'mailer\data')"
 }

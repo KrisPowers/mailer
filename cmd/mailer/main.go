@@ -1,6 +1,7 @@
 // Command mailer is a self-contained mail server for your own domains. It
-// runs in a container beside cloudflared and Tailscale, and is set up and
-// managed from its web dashboard.
+// runs in a container beside cloudflared and Tailscale, is set up and
+// managed from its admin dashboard, and is read and written in its
+// webmail.
 package main
 
 import (
@@ -38,6 +39,7 @@ import (
 	"mailer/internal/tailscale"
 	"mailer/internal/tunnel"
 	"mailer/internal/users"
+	"mailer/internal/webmail"
 )
 
 const maxClientMessage = 25 << 20
@@ -117,6 +119,12 @@ func serve(dataDir, listenHost string) error {
 	q.Mail = mailLog
 	m.Queue = q
 
+	wm := &webmail.Server{Cfg: cfgm, Users: db, Store: st, MTA: m, Limiter: limiter, Audit: signIns, Log: logger,
+		Dir: filepath.Join(dataDir, "webmail")}
+	// Mail arriving for an account is filed by its own rules, set in the
+	// webmail.
+	m.Rules = wm.Sort
+
 	runner := &tunnel.Runner{BinDir: filepath.Join(dataDir, "bin"), Log: logger}
 	adm := &admin.Server{Cfg: cfgm, Users: db, Store: st, Queue: q, MTA: m, Setup: setup,
 		Tunnel: runner, Logs: logs, Log: logger, Audit: signIns, Limiter: limiter, Auth: dashboardAuth}
@@ -134,8 +142,9 @@ func serve(dataDir, listenHost string) error {
 
 	// Mail ports listen on loopback only: the internet reaches them through
 	// the Cloudflare Tunnel (inbound mail) and Tailscale Funnel (clients),
-	// both running in this container. The dashboard listens on listenHost,
-	// which the container publishes to the host's loopback only.
+	// both running in this container. The dashboard and the webmail listen
+	// on listenHost, which the container publishes to the host's loopback
+	// only.
 	loop := func(port int) string { return fmt.Sprintf("127.0.0.1:%d", port) }
 	var listeners []net.Listener
 	listen := func(name, addr string) (net.Listener, error) {
@@ -156,6 +165,10 @@ func serve(dataDir, listenHost string) error {
 	if err != nil {
 		return err
 	}
+	webmailL, err := listen("webmail", net.JoinHostPort(listenHost, fmt.Sprint(cfg.Ports.Webmail)))
+	if err != nil {
+		return err
+	}
 	inboundL, err := listen("inbound", loop(cfg.Ports.Inbound))
 	if err != nil {
 		return err
@@ -171,6 +184,7 @@ func serve(dataDir, listenHost string) error {
 
 	tunnelDone := make(chan struct{})
 	go (&http.Server{Handler: adm.Handler(), ReadHeaderTimeout: 10 * time.Second}).Serve(adminL)
+	go (&http.Server{Handler: wm.Handler(), ReadHeaderTimeout: 10 * time.Second}).Serve(webmailL)
 	go (&http.Server{Handler: m.InboundHandler(), ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout: 5 * time.Minute}).Serve(inboundL)
 	go im.Serve(imapL, true)
@@ -187,7 +201,7 @@ func serve(dataDir, listenHost string) error {
 	}
 	go adm.RunChecks(ctx)
 	go syncDNS(ctx, setup, cfgm, logger)
-	logger.Printf("mailer running; dashboard on port %d", cfg.Ports.Admin)
+	logger.Printf("mailer running; dashboard on port %d, webmail on port %d", cfg.Ports.Admin, cfg.Ports.Webmail)
 	<-ctx.Done()
 
 	logger.Printf("shutting down")

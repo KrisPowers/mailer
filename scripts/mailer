@@ -6,7 +6,8 @@
 #   mailer update    pull the newest image and restart
 #   mailer status    show the container
 #   mailer logs      follow the log
-#   mailer open      open the dashboard
+#   mailer open      open the admin dashboard
+#   mailer mail      open the webmail
 #
 # compose.yaml and the data folder live in MAILER_HOME (default ~/.mailer),
 # the same place scripts/install.sh uses. MAILER_SHARE, set by the formula,
@@ -16,9 +17,10 @@ set -eu
 dir="${MAILER_HOME:-$HOME/.mailer}"
 repo="https://raw.githubusercontent.com/KrisPowers/mailer/main"
 url="http://localhost:8080"
+webmail="http://localhost:8081"
 
 usage() {
-    sed -n '4,9p' "$0" | sed 's/^# //'
+    sed -n '4,10p' "$0" | sed 's/^# //'
 }
 
 need_docker() {
@@ -54,6 +56,7 @@ start | update)
     compose pull
     compose up -d
     echo "Mailer is running. Open $url on this computer to finish setup."
+    echo "The webmail is at $webmail."
     echo "Data and settings: $dir/mailer/data"
     ;;
 stop)
@@ -68,10 +71,12 @@ logs)
     need_docker
     compose logs -f
     ;;
-open)
+open | mail)
+    target="$url"
+    [ "$1" = mail ] && target="$webmail"
     case "$(uname -s)" in
-    Darwin) open "$url" ;;
-    *) xdg-open "$url" >/dev/null 2>&1 || echo "$url" ;;
+    Darwin) open "$target" ;;
+    *) xdg-open "$target" >/dev/null 2>&1 || echo "$target" ;;
     esac
     ;;
 help | -h | --help)

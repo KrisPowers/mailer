@@ -8,3 +8,4 @@ mailer
 **/node_modules
 # Rebuilt from internal/ui inside the image.
 internal/admin/web
+internal/webmail/web

@@ -227,8 +227,8 @@ func clientHosts(domain string) []string {
 
 // ingressRules is everything the tunnel serves: the Worker's inbound
 // address and every domain's mail app settings names go to the inbound
-// port, and the dashboard's address, when remote access is on, to the
-// dashboard.
+// port, and the dashboard's and the webmail's addresses, when each is
+// served from anywhere, to their own ports.
 func ingressRules(cfg config.Config, inbound string) []IngressRule {
 	in := fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Inbound)
 	rules := []IngressRule{{inbound, in}}
@@ -239,6 +239,9 @@ func ingressRules(cfg config.Config, inbound string) []IngressRule {
 	}
 	if h := cfg.DashboardHost(); h != "" {
 		rules = append(rules, IngressRule{h, fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Admin)})
+	}
+	if h := cfg.WebmailHost(); h != "" {
+		rules = append(rules, IngressRule{h, fmt.Sprintf("http://127.0.0.1:%d", cfg.Ports.Webmail)})
 	}
 	return rules
 }
@@ -277,9 +280,14 @@ func (s *Setup) syncClientHosts(ctx context.Context, c *Client, cfg config.Confi
 			}
 		}
 	}
-	if h := cfg.DashboardHost(); h != "" {
+	for _, h := range []string{cfg.DashboardHost(), cfg.WebmailHost()} {
+		if h == "" {
+			continue
+		}
 		if z, ok := cf.Zones[cfg.Domain()]; ok {
-			return cname(z.ID, h)
+			if err := cname(z.ID, h); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

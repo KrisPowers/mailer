@@ -84,6 +84,10 @@ export interface Overview {
   funnel_at: string;
   pending_devices: number;
   dashboard_host: string;
+  // The webmail's public address when it's served from anywhere, and its
+  // port on this computer.
+  webmail_host: string;
+  webmail_port: number;
 }
 
 export interface Mailbox {
@@ -267,6 +271,9 @@ export interface ServerSettings {
   remote_enabled: boolean;
   remote_subdomain: string;
   dashboard_host: string;
+  webmail_enabled: boolean;
+  webmail_subdomain: string;
+  webmail_host: string;
   trace: boolean;
   imap_caps: string;
   warning?: string;

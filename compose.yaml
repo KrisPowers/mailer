@@ -2,7 +2,8 @@
 # image; from a checkout, `docker compose up -d --build` builds it here.
 # Then open http://localhost:8080 on this computer and finish the first-run
 # setup there: it makes the admin account and takes the Tailscale name and
-# key. There's no .env; every setting lives in the data folder.
+# key. The webmail is at http://localhost:8081. There's no .env; every
+# setting lives in the data folder.
 # Mail arrives through the Cloudflare Tunnel and mail apps connect through
 # Tailscale Funnel, both started from inside the container. The dashboard
 # can be served through the tunnel too (Settings, Server).
@@ -14,7 +15,8 @@ services:
     container_name: mailer
     restart: unless-stopped
     ports:
-      - "127.0.0.1:8080:8080" # dashboard
+      - "127.0.0.1:8080:8080" # admin dashboard
+      - "127.0.0.1:8081:8081" # webmail
       - "127.0.0.1:8877:8877" # Cloudflare sign-in comes back here
     volumes:
       # Mail, accounts, keys and settings: %LOCALAPPDATA%\mailer\data on

@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev:admin": "vite --mode admin",
-    "build": "tsc --noEmit && vite build --mode admin",
+    "dev:webmail": "vite --mode webmail",
+    "build": "tsc --noEmit && vite build --mode admin && vite build --mode webmail",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

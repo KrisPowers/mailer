@@ -27,5 +27,6 @@ docker compose up -d
 
 echo
 echo "Mailer is running. Open http://localhost:8080 on this computer to"
-echo "finish setup and make the admin account."
+echo "finish setup and make the admin account. The webmail is at"
+echo "http://localhost:8081."
 echo "Data and settings: $dir/mailer/data"

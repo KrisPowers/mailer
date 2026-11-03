@@ -2,11 +2,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
 // Each dashboard is built from its own folder and the parts in shared/:
-// `vite build --mode admin` builds admin/ into ../admin/web, the copy the
-// Go binary embeds. `npm run dev:admin` proxies the API to a running
-// mailer.
+// `vite build --mode admin` builds admin/ into ../admin/web and
+// `--mode webmail` builds webmail/ into ../webmail/web, the copies the Go
+// binary embeds. `npm run dev:admin` and `dev:webmail` proxy the API to a
+// running mailer.
 const apps: Record<string, { out: string; api: string }> = {
   admin: { out: "../../admin/web", api: "http://127.0.0.1:8080" },
+  webmail: { out: "../../webmail/web", api: "http://127.0.0.1:8081" },
 };
 
 export default defineConfig(({ mode }) => {

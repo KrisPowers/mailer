@@ -3,6 +3,7 @@ import configuration from "../../../../docs/configuration.md?raw";
 import dashboard from "../../../../docs/dashboard.md?raw";
 import howItWorks from "../../../../docs/how-it-works.md?raw";
 import troubleshooting from "../../../../docs/troubleshooting.md?raw";
+import webmail from "../../../../docs/webmail.md?raw";
 import type { IconName } from "../../shared/Icon";
 
 // The guides in docs/, the same files the repository shows, built in. The
@@ -11,13 +12,15 @@ const GUIDES: Record<string, string> = {
   "how-it-works": howItWorks,
   configuration,
   dashboard,
+  webmail,
   troubleshooting,
 };
 
 export const HELP: [string, string, IconName][] = [
   ["how-it-works", "How it works", "info"],
   ["configuration", "Configuration", "settings"],
-  ["dashboard", "The dashboards", "menu_book"],
+  ["dashboard", "The admin dashboard", "menu_book"],
+  ["webmail", "The webmail", "mail"],
   ["troubleshooting", "When something is off", "help"],
 ];
 

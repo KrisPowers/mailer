@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -222,6 +223,20 @@ func (db *DB) Authenticate(email, password string) (string, bool) {
 func (db *DB) AuthenticateApp(email, password string) (string, bool) {
 	email, ok := db.Authenticate(email, password)
 	return email, ok && db.MailApps(email)
+}
+
+// Stamp changes whenever email's password does, so a webmail session ends
+// when the password it signed in with is replaced. It's "" when there's no
+// such account.
+func (db *DB) Stamp(email string) string {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	r, ok := db.users[strings.ToLower(strings.TrimSpace(email))]
+	if !ok {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(r.Hash))
+	return hex.EncodeToString(sum[:8])
 }
 
 // LoginLocked reports whether email exists with its sign-in locked.
