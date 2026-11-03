@@ -106,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 	api("POST /api/accounts/password", s.resetPassword)
 	api("POST /api/accounts/delete", s.deleteAccount)
 	api("POST /api/accounts/locks", s.setLocks)
+	api("POST /api/accounts/apps", s.setMailApps)
 	api("GET /api/aliases", s.getAliases)
 	api("PUT /api/aliases", s.putAliases)
 	api("GET /api/flagged", s.getFlagged)
@@ -578,13 +579,15 @@ type accountInfo struct {
 	Size      int64         `json:"size"`
 	Aliases   []string      `json:"aliases"`
 	Locks     users.Locks   `json:"locks"`
+	// MailApps is whether Outlook and other mail apps may sign in.
+	MailApps bool `json:"mail_apps"`
 }
 
 func (s *Server) listAccounts(w http.ResponseWriter, r *http.Request) {
 	cfg := s.Cfg.Get()
 	out := []accountInfo{}
 	for _, email := range s.Users.List() {
-		ai := accountInfo{Email: email, Aliases: []string{}, Locks: s.Users.Locks(email)}
+		ai := accountInfo{Email: email, Aliases: []string{}, Locks: s.Users.Locks(email), MailApps: s.Users.MailApps(email)}
 		if acct, err := s.Store.Account(email); err == nil {
 			for _, mb := range acct.List() {
 				st, err := acct.Status(mb.Name)
@@ -650,7 +653,10 @@ func (s *Server) normalizeLocal(input string) (string, error) {
 // createAccount and resetPassword use the password given, or generate one
 // when it's empty.
 func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
-	var req struct{ Email, Password string }
+	var req struct {
+		Email, Password string
+		MailApps        bool `json:"mail_apps"`
+	}
 	if err := readJSON(r, &req); err != nil {
 		writeErr(w, 400, err)
 		return
@@ -664,6 +670,12 @@ func (s *Server) createAccount(w http.ResponseWriter, r *http.Request) {
 	if err := s.Users.Add(email, pw); err != nil {
 		writeErr(w, 400, err)
 		return
+	}
+	if req.MailApps {
+		if err := s.Users.SetMailApps(email, true); err != nil {
+			writeErr(w, 500, err)
+			return
+		}
 	}
 	s.Store.Account(email) // create default folders now
 	s.Log.Printf("admin: created account %s", email)
@@ -715,6 +727,25 @@ func (s *Server) setLocks(w http.ResponseWriter, r *http.Request) {
 	}
 	s.Log.Printf("admin: locks for %s: receive=%v send=%v sign-in=%v", req.Email, req.Receive, req.Send, req.Login)
 	writeJSON(w, req.Locks)
+}
+
+// setMailApps lets an account's mail apps sign in, or stops them; the
+// webmail works either way.
+func (s *Server) setMailApps(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email string `json:"email"`
+		On    bool   `json:"on"`
+	}
+	if err := readJSON(r, &req); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if err := s.Users.SetMailApps(req.Email, req.On); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	s.Log.Printf("admin: mail apps for %s: %v", req.Email, req.On)
+	writeJSON(w, map[string]bool{"on": req.On})
 }
 
 func (s *Server) getAliases(w http.ResponseWriter, r *http.Request) {

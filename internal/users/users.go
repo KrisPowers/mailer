@@ -25,7 +25,42 @@ const iterations = 600_000
 type record struct {
 	Email string `json:"email"`
 	Hash  string `json:"hash"` // pbkdf2-sha256$iterations$salt$key
+	// MailApps lets Outlook and other mail apps sign in over IMAP and SMTP,
+	// beside the webmail. An admin turns it on per account. Accounts from
+	// before the webmail have no value here and keep their mail apps.
+	MailApps *bool `json:"mail_apps,omitempty"`
 	Locks
+}
+
+func appsOn(r *record) bool { return r.MailApps == nil || *r.MailApps }
+
+// MailApps reports whether email's mail apps may sign in.
+func (db *DB) MailApps(email string) bool {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	r, ok := db.users[strings.ToLower(strings.TrimSpace(email))]
+	return ok && appsOn(r)
+}
+
+// AppsOff reports whether email exists with its mail apps turned off.
+func (db *DB) AppsOff(email string) bool {
+	db.mu.RLock()
+	defer db.mu.RUnlock()
+	r, ok := db.users[strings.ToLower(strings.TrimSpace(email))]
+	return ok && !appsOn(r)
+}
+
+// SetMailApps turns email's mail app sign-in on or off.
+func (db *DB) SetMailApps(email string, on bool) error {
+	email = strings.ToLower(email)
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	r, ok := db.users[email]
+	if !ok {
+		return fmt.Errorf("no such user %s", email)
+	}
+	r.MailApps = &on
+	return db.save()
 }
 
 // Locks are an administrator's per-account switches. Each one stops one
@@ -33,7 +68,7 @@ type record struct {
 type Locks struct {
 	Receive bool `json:"lock_receive,omitempty"` // incoming mail is refused
 	Send    bool `json:"lock_send,omitempty"`    // the account can't send
-	Login   bool `json:"lock_login,omitempty"`   // no mail app can sign in
+	Login   bool `json:"lock_login,omitempty"`   // no sign-in, webmail or mail app
 }
 
 // Locks returns an account's locks.
@@ -111,7 +146,9 @@ func (db *DB) Add(email, password string) error {
 	if err != nil {
 		return err
 	}
-	db.users[email] = &record{Email: email, Hash: h}
+	// Mail apps stay off until an admin turns them on; the webmail works.
+	off := false
+	db.users[email] = &record{Email: email, Hash: h, MailApps: &off}
 	return db.save()
 }
 
@@ -178,6 +215,13 @@ func (db *DB) Authenticate(email, password string) (string, bool) {
 	db.mu.RUnlock()
 	match := verify(h, password)
 	return email, ok && match && !locked
+}
+
+// AuthenticateApp is Authenticate for mail apps over IMAP and SMTP: the
+// account's mail apps must be turned on too. AppsOff tells callers why.
+func (db *DB) AuthenticateApp(email, password string) (string, bool) {
+	email, ok := db.Authenticate(email, password)
+	return email, ok && db.MailApps(email)
 }
 
 // LoginLocked reports whether email exists with its sign-in locked.

@@ -139,6 +139,17 @@ func TestAccounts(t *testing.T) {
 		t.Error("unlocked account can't sign in")
 	}
 
+	// Mail apps start off for a new account; the admin turns them on.
+	if _, ok := s.Users.AuthenticateApp("kris@example.com", pw); ok || !s.Users.AppsOff("kris@example.com") {
+		t.Error("a new account's mail apps can sign in")
+	}
+	if code, _ := do(t, h, "POST", "/api/accounts/apps", `{"email":"kris@example.com","on":true}`, hdr); code != 200 {
+		t.Fatalf("mail apps: %d", code)
+	}
+	if _, ok := s.Users.AuthenticateApp("kris@example.com", pw); !ok {
+		t.Error("mail apps turned on can't sign in")
+	}
+
 	code, out = do(t, h, "POST", "/api/accounts/password", `{"email":"kris@example.com"}`, hdr)
 	if code != 200 || out["password"] == pw {
 		t.Errorf("reset: %d %v", code, out)

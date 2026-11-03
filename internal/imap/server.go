@@ -475,6 +475,9 @@ func (s *session) audit(user, res, detail string) {
 		Result: res, Detail: detail, Commands: s.cmds})
 }
 
+// appsOff is the audit detail for an account whose mail apps are off.
+const appsOff = "mail apps are off for this account; an admin turns them on in the dashboard"
+
 func (s *session) authAllowed(user string) result {
 	if s.user != "" {
 		return bad("already authenticated")
@@ -559,10 +562,14 @@ func (s *session) finishAuth(user, pass string) result {
 		s.audit(user, audit.Blocked, "too many failed sign-ins to this account in the last 15 minutes")
 		return no("[UNAVAILABLE] too many failed logins; try later")
 	}
-	email, okAuth := s.srv.Users.Authenticate(user, pass)
+	email, okAuth := s.srv.Users.AuthenticateApp(user, pass)
 	if !okAuth {
 		if s.srv.Users.LoginLocked(user) {
 			s.audit(user, audit.Locked, "sign-in is locked for this account")
+			return no("[AUTHENTICATIONFAILED] invalid credentials")
+		}
+		if s.srv.Users.AppsOff(user) {
+			s.audit(user, audit.Locked, appsOff)
 			return no("[AUTHENTICATIONFAILED] invalid credentials")
 		}
 		res, detail := audit.BadPassword, "wrong password"

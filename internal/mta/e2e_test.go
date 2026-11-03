@@ -176,6 +176,7 @@ func TestEndToEnd(t *testing.T) {
 	if err := db.Add("me@example.com", "correct horse battery"); err != nil {
 		t.Fatal(err)
 	}
+	db.SetMailApps("me@example.com", true)
 	key, _ := rsa.GenerateKey(rand.Reader, 2048)
 	signer := &mailauth.Signer{Domain: "example.com", Selector: "mail", Key: key}
 	dns := &fakeDNS{txt: map[string][]string{
