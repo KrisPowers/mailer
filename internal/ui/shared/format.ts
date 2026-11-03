@@ -63,7 +63,15 @@ export function browserOf(ua: string): string {
 // generatePassword is a strong password from the browser's random source.
 export function generatePassword(): string {
   const all = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const pick = () => all[crypto.getRandomValues(new Uint32Array(1))[0] % all.length];
+  // Values past the last whole run of the alphabet are drawn again, so
+  // every character is as likely as the next.
+  const limit = Math.floor(2 ** 32 / all.length) * all.length;
+  const pick = () => {
+    for (;;) {
+      const v = crypto.getRandomValues(new Uint32Array(1))[0];
+      if (v < limit) return all[v % all.length];
+    }
+  };
   const group = () => Array.from({ length: 5 }, pick).join("");
   return [group(), group(), group(), group()].join("-");
 }

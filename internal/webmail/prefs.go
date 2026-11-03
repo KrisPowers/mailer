@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"mailer/internal/store"
 	"mailer/internal/users"
 )
 
@@ -124,8 +125,12 @@ type prefsStore struct {
 	m   map[string]*Prefs
 }
 
-func (ps *prefsStore) path(email string) string {
-	return filepath.Join(ps.dir, strings.ToLower(email)+".json")
+func (ps *prefsStore) path(email string) (string, error) {
+	name, err := store.AccountName(email)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(ps.dir, name+".json"), nil
 }
 
 // get returns a copy of email's prefs, with the default categories for an
@@ -141,8 +146,10 @@ func (ps *prefsStore) load(email string) *Prefs {
 		return p
 	}
 	p := &Prefs{}
-	if b, err := os.ReadFile(ps.path(email)); err == nil {
-		json.Unmarshal(b, p)
+	if path, err := ps.path(email); err == nil {
+		if b, err := os.ReadFile(path); err == nil {
+			json.Unmarshal(b, p)
+		}
 	}
 	if p.Categories == nil {
 		p.Categories = append([]Category(nil), defaultCategories...)
@@ -162,9 +169,13 @@ func (ps *prefsStore) set(email string, p Prefs) error {
 	if err != nil {
 		return err
 	}
+	path, err := ps.path(email)
+	if err != nil {
+		return err
+	}
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	if err := users.WriteFileAtomic(ps.path(email), b, 0o600); err != nil {
+	if err := users.WriteFileAtomic(path, b, 0o600); err != nil {
 		return err
 	}
 	c := clonePrefs(&p)

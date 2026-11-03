@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -113,11 +114,26 @@ func New(root string) *Store {
 	return &Store{root: root, accounts: map[string]*Account{}}
 }
 
+// accountRe is what an account's address may be, as a folder name: the
+// characters an address allows, with no slash and no leading dot.
+var accountRe = regexp.MustCompile(`^[a-z0-9!#$%&'*+=?^_{|}~-][a-z0-9!#$%&'*+=?^_{|}~.-]*@[a-z0-9][a-z0-9.-]*$`)
+
+// AccountName is email as the name of its folder on disk, or an error when
+// it can't safely be one: anything from a request passes through here
+// before it becomes part of a path.
+func AccountName(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !accountRe.MatchString(email) || strings.Contains(email, "..") {
+		return "", fmt.Errorf("invalid account name %q", email)
+	}
+	return email, nil
+}
+
 // Account opens (creating if needed) the mail account for email.
 func (s *Store) Account(email string) (*Account, error) {
-	email = strings.ToLower(email)
-	if email == "" || strings.ContainsAny(email, `/\`) || strings.HasPrefix(email, ".") {
-		return nil, fmt.Errorf("invalid account name %q", email)
+	email, err := AccountName(email)
+	if err != nil {
+		return nil, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

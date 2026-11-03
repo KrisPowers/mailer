@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -143,7 +142,16 @@ func funnelActive(cfgJSON []byte, publicPort, localPort int) bool {
 	return false
 }
 
-var urlRe = regexp.MustCompile(`https://login\.tailscale\.com/\S+`)
+// loginURL is the first Tailscale sign-in or approval link in the CLI's
+// output, or "".
+func loginURL(text string) string {
+	for _, f := range strings.Fields(text) {
+		if strings.HasPrefix(f, "https://login.tailscale.com/") {
+			return f
+		}
+	}
+	return ""
+}
 
 // ActionNeeded means the user must open URL once (to allow Funnel on
 // their tailnet), after which EnableFunnel should be retried.
@@ -170,7 +178,7 @@ func EnableFunnel(ctx context.Context, imapPort, subPort int) error {
 			fmt.Sprintf("--tls-terminated-tcp=%d", f.public), fmt.Sprintf("tcp://127.0.0.1:%d", f.local))
 		cancel()
 		text := strings.TrimSpace(string(out))
-		if u := urlRe.FindString(text); u != "" {
+		if u := loginURL(text); u != "" {
 			return &ActionNeeded{URL: u, Message: "Allow Funnel for this machine in Tailscale, then click Enable again"}
 		}
 		if err != nil {
