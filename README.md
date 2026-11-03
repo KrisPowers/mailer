@@ -36,6 +36,6 @@ Open <http://localhost:8080> on the computer running Mailer:
 1. **Setup:** make the admin account and name the server on your tailnet.
 2. **Connect Cloudflare** and approve in the tab that opens.
 3. **Tailscale, Enable**, and follow the links it shows.
-4. **New account** (top right) lists the settings for your mail app.
+4. **New account** (top right). Its **Mail apps** page lists the settings for your mail app.
 
-Every guide is in the dashboard under **Docs**.
+Every guide is in the dashboard under **Help**.

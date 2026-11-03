@@ -13,7 +13,7 @@ dashboard and the container.
 
 - Keep each pull request to one change.
 - Run `go vet ./...` and `go test ./...`, and add tests for new behavior.
-- If you changed `internal/admin/ui`, rebuild and commit `internal/admin/web`.
+- If you changed `internal/ui`, rebuild and commit `internal/admin/web` (`scripts/build.ps1`, or the `web` artifact from CI).
 - Update the docs in `docs/` when behavior or settings change.
 - Write commit messages as `<type>(<scope>): <summary>`, for example
   `fix(imap): keep flags on copy`.

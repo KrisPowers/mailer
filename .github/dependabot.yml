@@ -17,7 +17,7 @@ updates:
   # Dashboard dependencies. A bump changes the committed build in
   # internal/admin/web, so rebuild and commit it on the update's branch.
   - package-ecosystem: npm
-    directory: /internal/admin/ui
+    directory: /internal/ui
     schedule:
       interval: monthly
     groups:

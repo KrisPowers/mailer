@@ -5,10 +5,10 @@
 # multi-platform images build without emulating Node or Go.
 
 FROM --platform=$BUILDPLATFORM node:26.12.1-alpine AS ui
-WORKDIR /src/internal/admin/ui
-COPY internal/admin/ui/package.json internal/admin/ui/package-lock.json ./
+WORKDIR /src/internal/ui
+COPY internal/ui/package.json internal/ui/package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY internal/admin/ui/ ./
+COPY internal/ui/ ./
 COPY docs/ /src/docs/
 RUN npm run build
 
