@@ -21,21 +21,22 @@ jobs:
       - run: go test ./...
       - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
-  # The admin UI build is committed (internal/admin/web) so building the
-  # server never needs Node. This rebuilds it, publishes the result as the
-  # "web" artifact and fails if the committed copy is out of date.
+  # The dashboard builds are committed (internal/admin/web) so building
+  # the server never needs Node. This rebuilds them from internal/ui,
+  # publishes the result as the "web" artifact and fails if the committed
+  # copy is out of date.
   ui:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: internal/admin/ui
+        working-directory: internal/ui
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
           cache: npm
-          cache-dependency-path: internal/admin/ui/package-lock.json
+          cache-dependency-path: internal/ui/package-lock.json
       - run: npm ci
       - run: npm audit --omit=dev --audit-level=high
       - run: npm run build
@@ -45,7 +46,7 @@ jobs:
           path: internal/admin/web
       - name: Committed build is current
         run: |
-          changes=$(git status --porcelain -- ../web)
+          changes=$(git status --porcelain -- ../admin/web)
           if [ -n "$changes" ]; then
             echo "$changes"
             echo "::error::internal/admin/web is stale; commit the 'web' artifact from this run"

@@ -6,5 +6,5 @@ data
 mailer-data
 mailer
 **/node_modules
-# Rebuilt from internal/admin/ui inside the image.
+# Rebuilt from internal/ui inside the image.
 internal/admin/web

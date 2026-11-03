@@ -26,7 +26,7 @@ hidden. See [Configuration](configuration.md).
 ## Can't reach the dashboard
 
 - **"This device needs approval"**: an admin approves the code it shows under
-  **Access**, **Devices**. A browser that clears its site data, or a private
+  **Devices**. A browser that clears its site data, or a private
   window, gets a new code each time.
 - **"Setup isn't finished"**: setup only runs on the computer running Mailer, at
   <http://localhost:8080>.
@@ -41,7 +41,7 @@ hidden. See [Configuration](configuration.md).
 
 ## Mail isn't being sent
 
-Check **Queue** for messages waiting or bounced. Cloudflare Email Sending needs the
+Check **Traffic** for messages waiting or bounced. Cloudflare Email Sending needs the
 Workers Paid plan; until it's active, messages wait and are retried for four days.
 
 ## Logs

@@ -26,11 +26,11 @@ things:
 
 1. **An approved device.** Each browser gets a random device ID on its first visit,
    kept in its local storage, and sees only a waiting screen with a short code
-   until an admin approves that code under **Access**, **Devices**. The browser
-   used for setup is approved by it.
-2. **An account.** There's no sign-up; admins make accounts under **Access**,
-   **Dashboard accounts**, as an admin or a user. Users manage mail; admins also
-   approve devices, manage accounts and change **Server** settings.
+   until an admin approves that code under **Devices**. The browser used for
+   setup is approved by it.
+2. **An account.** There's no sign-up; admins make accounts under **People**, as
+   an admin or a user. Users manage mail; admins also approve devices, manage
+   people and change **Server** settings.
 
 Signing in gives a token that lasts 15 minutes and is renewed while the page is
 open, bound to that session and device: removing the device, turning the account

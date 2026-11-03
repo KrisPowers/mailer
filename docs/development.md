@@ -6,7 +6,7 @@
 |---|---|
 | `cmd/mailer` | The server's entry point |
 | `internal/` | Packages: IMAP and SMTP servers, store, queue, Cloudflare setup, Tailscale, tunnel, admin API |
-| `internal/admin/ui` | The dashboard: React and TypeScript, built with Vite |
+| `internal/ui` | The dashboards: React and TypeScript, built with Vite. `shared/` holds the parts every dashboard uses, `admin/` the admin dashboard |
 | `internal/admin/web` | The committed dashboard build the Go binary embeds |
 | `docs` | The guides, which the dashboard's Docs page builds in, and `images/` for the README |
 | `internal/cloudflare/worker` | The Email Routing Worker deployed to Cloudflare |
@@ -31,9 +31,9 @@ so `go vet`, `go test` and builds outside Docker work without Node. Rebuild it a
 changing the UI, with `scripts/build.ps1` or:
 
 ```sh
-cd internal/admin/ui
+cd internal/ui
 npm install
-npm run dev     # hot reload on :5173, proxies /api to a running mailer on :8080
+npm run dev:admin   # hot reload on :5173, proxies /api to a running mailer on :8080
 npm run build   # type-check, then rebuild internal/admin/web; commit the result
 ```
 
