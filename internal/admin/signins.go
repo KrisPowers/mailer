@@ -81,6 +81,8 @@ func (s *Server) signInSteps(ctx context.Context, email, password string) []clou
 		err = fmt.Errorf("no account %q; the username is the full email address", email)
 	case !ok:
 		err = errors.New("wrong password for this account")
+	case !s.Users.MailApps(email):
+		err = errors.New("mail apps are off for this account; turn them on in its page")
 	}
 	if !step("Account and password", err, "match") {
 		return steps

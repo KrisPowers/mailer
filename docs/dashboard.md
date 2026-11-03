@@ -13,7 +13,7 @@ fixes each; the checks run again every minute by themselves.
 
 | Page | What it's for |
 |---|---|
-| **Accounts** | The accounts table. Each account's page has its IMAP and SMTP settings (copy all, print), controls to lock receiving, sending or sign-in, its aliases and catch-all, folders, and sign-ins with a test |
+| **Accounts** | The accounts table. Each account's page has its IMAP and SMTP settings (copy all, print), controls to lock receiving, sending or sign-in, the **Mail apps** switch that lets Outlook and other IMAP apps sign in (off for new accounts), its aliases and catch-all, folders, and sign-ins with a test |
 | **Flagged** | Every flagged message in every account: flagged by users in their mail apps, or by Mailer on delivery for a risky attachment or as marketing. Clear the flag or move the message to Trash |
 | **Queue** | All mail, received and sent: waiting, delivered, junk, rejected, sent, bounced |
 | **Logs** | Recent server activity |

@@ -432,9 +432,14 @@ func (s *session) auth(arg string) {
 		s.reply(454, "4.7.0", "too many failed attempts; try later")
 		return
 	}
-	email, ok := s.srv.Users.Authenticate(user, pass)
+	email, ok := s.srv.Users.AuthenticateApp(user, pass)
 	if !ok && s.srv.Users.LoginLocked(user) {
 		s.audit(user, audit.Locked, "sign-in is locked for this account")
+		s.reply(535, "5.7.8", "authentication failed")
+		return
+	}
+	if !ok && s.srv.Users.AppsOff(user) {
+		s.audit(user, audit.Locked, "mail apps are off for this account; an admin turns them on in the dashboard")
 		s.reply(535, "5.7.8", "authentication failed")
 		return
 	}
