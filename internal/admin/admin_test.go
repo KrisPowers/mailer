@@ -186,18 +186,27 @@ func TestDashboardAuth(t *testing.T) {
 	}
 	admin := map[string]string{"X-Mailer": "1", "X-Device": first, "Authorization": "Bearer " + out["token"].(string)}
 
-	// A second device can't sign in until an admin approves it.
-	_, out = do(t, h, "POST", "/api/auth/device", "", here)
+	// After setup, a browser on this computer is approved by itself.
+	if _, out := do(t, h, "POST", "/api/auth/device", "", here); out["approved"] != true {
+		t.Errorf("a device on this computer waits for approval: %v", out)
+	}
+
+	// A device through the tunnel can't sign in until an admin approves it.
+	_, out = do(t, h, "POST", "/api/auth/device", "", map[string]string{"X-Mailer": "1", "Cf-Connecting-Ip": "203.0.113.9"})
+	if out["approved"] != false {
+		t.Fatalf("a device through the tunnel was approved: %v", out)
+	}
 	second := out["id"].(string)
+	via := map[string]string{"X-Mailer": "1", "X-Device": second, "Cf-Connecting-Ip": "203.0.113.9"}
 	login := `{"username":"kris","password":"correct horse battery"}`
-	if code, _ := do(t, h, "POST", "/api/auth/login", login, map[string]string{"X-Mailer": "1", "X-Device": second}); code != 403 {
+	if code, _ := do(t, h, "POST", "/api/auth/login", login, via); code != 403 {
 		t.Errorf("unapproved device signed in: %d", code)
 	}
 	d, _ := s.Auth.Device(second)
 	if code, _ := do(t, h, "POST", "/api/auth/devices/approve", `{"key":"`+d.Key+`","name":"Laptop"}`, admin); code != 200 {
 		t.Fatalf("approve: %d", code)
 	}
-	code, out = do(t, h, "POST", "/api/auth/login", login, map[string]string{"X-Mailer": "1", "X-Device": second})
+	code, out = do(t, h, "POST", "/api/auth/login", login, via)
 	if code != 200 {
 		t.Fatalf("approved device: %d %v", code, out)
 	}

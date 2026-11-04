@@ -28,8 +28,9 @@ things:
 
 1. **An approved device.** Each browser gets a random device ID on its first visit,
    kept in its local storage, and sees only a waiting screen with a short code
-   until an admin approves that code under **Devices**. The browser used for
-   setup is approved by it.
+   until an admin approves that code under **Devices**. A browser on the computer
+   running Mailer is approved by itself, so that computer can't be locked out;
+   only visits through the tunnel wait for an admin.
 2. **An account.** There's no sign-up; admins make accounts under **People**, as
    an admin or a user. Users manage mail; admins also approve devices, manage
    people and change **Server** settings.

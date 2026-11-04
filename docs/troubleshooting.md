@@ -27,7 +27,8 @@ hidden. See [Configuration](configuration.md).
 
 - **"This device needs approval"**: an admin approves the code it shows under
   **Devices**. A browser that clears its site data, or a private
-  window, gets a new code each time.
+  window, gets a new code each time. On the computer running Mailer this
+  doesn't happen: its browsers are approved by themselves.
 - **"Setup isn't finished"**: setup only runs on the computer running Mailer, at
   <http://localhost:8080>.
 - **"Too many wrong passwords"**: five failures in 15 minutes lock out that
