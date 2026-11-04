@@ -146,9 +146,28 @@ func refreshOf(r *http.Request) string {
 func (s *Server) authStatus(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"setup": s.Auth.NeedsSetup(), "local": local(r), "device": nil}
 	if d, ok := s.Auth.Device(r.Header.Get(deviceHeader)); ok {
-		resp["device"] = map[string]any{"code": d.Code, "approved": d.Approved}
+		resp["device"] = map[string]any{"code": d.Code, "approved": s.approveHere(r, d)}
 	}
 	writeJSON(w, resp)
+}
+
+// approveHere approves a browser on the computer running mailer by itself:
+// the dashboard is only published on this computer's loopback, so whoever
+// reaches it here could approve it anyway, and with no other device to
+// approve from, this computer would be locked out. Through the tunnel
+// nothing changes. It reports whether d is approved.
+func (s *Server) approveHere(r *http.Request, d auth.Device) bool {
+	if d.Approved {
+		return true
+	}
+	if !local(r) || s.Auth.NeedsSetup() {
+		return false
+	}
+	if err := s.Auth.Approve(d.Key, "This computer", "this computer"); err != nil {
+		return false
+	}
+	s.Log.Printf("auth: device %s on this computer approved by itself", d.Code)
+	return true
 }
 
 // newDevice gives a browser its device ID on its first visit.
@@ -163,8 +182,11 @@ func (s *Server) newDevice(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err)
 		return
 	}
-	s.Log.Printf("auth: new device %s from %s is waiting for approval", d.Code, ip)
-	writeJSON(w, map[string]any{"id": id, "code": d.Code, "approved": false})
+	approved := s.approveHere(r, d)
+	if !approved {
+		s.Log.Printf("auth: new device %s from %s is waiting for approval", d.Code, ip)
+	}
+	writeJSON(w, map[string]any{"id": id, "code": d.Code, "approved": approved})
 }
 
 var labelRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
