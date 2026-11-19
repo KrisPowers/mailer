@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type FormEvent } from "react";
 import { message } from "../../shared/format";
 import { Icon, type IconName } from "../../shared/Icon";
-import { MoreMenu, useNotify } from "../../shared/ui";
+import { MoreMenu, Tooltips, useNav, useNotify } from "../../shared/ui";
 import { api } from "./api";
 import { Compose, type Start } from "./Compose";
 import { List } from "./List";
@@ -29,15 +29,16 @@ export interface MailContext {
   compose: (s: Start) => void;
 }
 
-// Mail is the frame: a header with the search bar, a sidebar with New
-// message, the folders, flagged mail and the categories, then the list of
-// messages beside the one being read or written.
+// Mail is the frame: a header with the menu, the search bar and who is
+// signed in; a sidebar with New message, the folders, flagged mail and the
+// categories, Settings at its foot; then the list of messages beside the one
+// being read or written.
 export function Mail({ me, setMe, onSignOut }: { me: Me; setMe: (m: Me) => void; onSignOut: () => void }) {
   const [view, setView] = useState(readHash);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [open, setOpen] = useState<Ref | null>(null);
   const [writing, setWriting] = useState<Start | null>(null);
-  const [drawer, setDrawer] = useState(false);
+  const { drawer, setDrawer, rail, menu } = useNav();
   const [tick, setTick] = useState(0);
   const notify = useNotify();
 
@@ -66,7 +67,7 @@ export function Mail({ me, setMe, onSignOut }: { me: Me; setMe: (m: Me) => void;
     };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
-  }, []);
+  }, [setDrawer]);
 
   const inbox = folders.find((f) => f.special === "inbox");
   useEffect(() => {
@@ -102,17 +103,16 @@ export function Mail({ me, setMe, onSignOut }: { me: Me; setMe: (m: Me) => void;
   const reading = !settings && (writing !== null || open !== null);
 
   return (
-    <div className="app mail-app">
+    <div className={"app mail-app" + (rail ? " rail" : "")}>
       <header className="header">
         <div className="header-start">
-          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer((d) => !d)}>
+          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer || !rail} onClick={menu}>
             <Icon name="menu" />
           </button>
-          <a className="brand" href="#/"><span className="brand-mark"><Icon name="mail" size={20} /></span><span className="brand-name">Mail</span></a>
+          <a className="brand" href="#/"><span className="brand-mark"><Icon name="mail" size={18} /></span><span className="brand-name">Mail</span></a>
         </div>
         <Search view={view} />
         <div className="header-actions">
-          <a className={"icon-btn" + (settings ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
           <MoreMenu label={`Signed in as ${me.email}`} icon="person" actions={[
             { label: me.email, icon: "person", disabled: true, onClick: () => {} },
             { label: "Settings", icon: "settings", onClick: () => go("#/settings") },
@@ -125,48 +125,51 @@ export function Mail({ me, setMe, onSignOut }: { me: Me; setMe: (m: Me) => void;
         <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Folders">
           {settings ? (
             <>
-              <a className="nav-back" href="#/"><Icon name="arrow_back" /><span>Mail</span></a>
-              <hr className="nav-rule" />
+              <a className="nav-back" href="#/" title={rail ? "Back" : undefined}><Icon name="arrow_back" /><span className="nav-label">Back</span></a>
               {SECTIONS.map(([key, label, icon], i) => (
-                <a key={key} className={"nav-item quiet" + (section === key || (!section && i === 0) ? " on" : "")} href={`#/settings/${key}`}>
+                <a key={key} className={"nav-item quiet" + (section === key || (!section && i === 0) ? " on" : "")} href={`#/settings/${key}`} title={rail ? label : undefined}>
                   <Icon name={icon} /><span className="nav-label">{label}</span>
                 </a>
               ))}
             </>
           ) : (
             <>
-              <button type="button" className="compose-btn" disabled={!me.can_send} title={me.can_send ? undefined : "Sending is turned off for this account"}
+              <button type="button" className="compose-btn" disabled={!me.can_send} title={me.can_send ? (rail ? "New message" : undefined) : "Sending is turned off for this account"}
                 onClick={() => { setWriting({ mode: "new" }); setDrawer(false); }}>
-                <Icon name="edit_square" size={22} />New message
+                <Icon name="edit_square" /><span className="nav-label">New message</span>
               </button>
               {folders.map((f) => {
                 const depth = f.name.split("/").length - 1;
                 const on = view.kind === "folder" && view.folder === f.name;
                 return (
-                  <a key={f.name} className={"nav-item" + (on ? " on" : "")} href={folderHref(f.name)} style={depth ? { paddingLeft: 20 + depth * 16 } : undefined}
+                  <a key={f.name} className={"nav-item" + (on ? " on" : "")} href={folderHref(f.name)} title={rail ? folderLabel(f) : undefined}
+                    style={depth && !rail ? { paddingLeft: 12 + depth * 16 } : undefined}
                     onDragOver={(e) => { if (e.dataTransfer.types.includes(DRAG)) { e.preventDefault(); e.currentTarget.classList.add("drop"); } }}
                     onDragLeave={(e) => e.currentTarget.classList.remove("drop")}
                     onDrop={(e) => drop(e, f.name)}>
                     <Icon name={folderIcon(f)} />
                     <span className="nav-label">{folderLabel(f)}</span>
                     {(f.special === "drafts" ? f.total : f.special === "sent" || f.special === "trash" ? 0 : f.unread) > 0 && (
-                      <span className={"nav-count" + (f.special === "inbox" ? " alert" : "")}>{(f.special === "drafts" ? f.total : f.unread).toLocaleString()}</span>
+                      <span className="nav-count">{(f.special === "drafts" ? f.total : f.unread).toLocaleString()}</span>
                     )}
                   </a>
                 );
               })}
               <NewFolder onMade={reloadFolders} />
-              <hr className="nav-rule" />
-              <a className={"nav-item" + (view.kind === "flagged" ? " on" : "")} href="#/flagged"><Icon name="flag" /><span className="nav-label">Flagged</span></a>
+              <a className={"nav-item" + (view.kind === "flagged" ? " on" : "")} href="#/flagged" title={rail ? "Flagged" : undefined}><Icon name="flag" /><span className="nav-label">Flagged</span></a>
               {me.prefs.categories.length > 0 && <div className="nav-heading">Categories</div>}
               {me.prefs.categories.map((c) => (
-                <a key={c.id} className={"nav-item" + (view.kind === "category" && view.id === c.id ? " on" : "")} href={"#/c/" + c.id}>
+                <a key={c.id} className={"nav-item" + (view.kind === "category" && view.id === c.id ? " on" : "")} href={"#/c/" + c.id} title={rail ? c.name : undefined}>
                   <span className="cat-dot" style={{ background: c.color }} />
                   <span className="nav-label">{c.name}</span>
                 </a>
               ))}
             </>
           )}
+          <span className="nav-gap" />
+          <a className={"nav-item" + (settings ? " on" : "")} href="#/settings" aria-current={settings ? "page" : undefined} title={rail ? "Settings" : undefined}>
+            <Icon name="settings" /><span className="nav-label">Settings</span>
+          </a>
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
@@ -207,6 +210,7 @@ export function Mail({ me, setMe, onSignOut }: { me: Me; setMe: (m: Me) => void;
           </main>
         )}
       </div>
+      <Tooltips />
     </div>
   );
 }

@@ -22,10 +22,13 @@ export function PageHead({ title, sub, actions, back, lead }: { title: ReactNode
   );
 }
 
-// Card is a soft filled block with a heading.
+// Card is a panel with a heading; with a title, it folds shut from the
+// chevron at its right.
 export function Card({ title, sub, action, children, className }: { title?: ReactNode; sub?: ReactNode; action?: ReactNode; children?: ReactNode; className?: string }) {
+  const [open, setOpen] = useState(true);
+  const folds = !!title && !!children;
   return (
-    <section className={"card" + (className ? " " + className : "")}>
+    <section className={"card" + (open ? "" : " folded") + (className ? " " + className : "")}>
       {(title || action) && (
         <div className="card-head">
           <div className="card-titles">
@@ -33,10 +36,93 @@ export function Card({ title, sub, action, children, className }: { title?: Reac
             {sub && <p>{sub}</p>}
           </div>
           {action}
+          {folds && (
+            <button type="button" className="icon-btn card-fold" aria-label={open ? "Collapse" : "Expand"} aria-expanded={open} onClick={() => setOpen(!open)}>
+              <Icon name="expand_more" />
+            </button>
+          )}
         </div>
       )}
-      {children}
+      {folds ? <div className="card-body" hidden={!open}>{children}</div> : children}
     </section>
+  );
+}
+
+// useNav is the sidebar's menu button: on narrow windows it slides the
+// sidebar over the page; on wide ones it folds the sidebar to its icons,
+// remembered for next time.
+export function useNav() {
+  const [drawer, setDrawer] = useState(false);
+  const [rail, setRail] = useState(() => {
+    try {
+      return localStorage.getItem("nav.rail") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const menu = () => {
+    if (matchMedia("(max-width: 900px)").matches) return setDrawer(!drawer);
+    setRail(!rail);
+    try {
+      localStorage.setItem("nav.rail", rail ? "0" : "1");
+    } catch {
+      // Kept until the page closes.
+    }
+  };
+  return { drawer, setDrawer, rail, menu };
+}
+
+// Tooltips shows what an element's title says in a small dark label under it
+// (or over it, near the bottom of the window), in place of the browser's own.
+// A title is moved to data-tip the first time the pointer rests on it.
+export function Tooltips() {
+  const [tip, setTip] = useState<{ text: string; x: number; y: number; above: boolean } | null>(null);
+  useEffect(() => {
+    let target: HTMLElement | null = null;
+    let timer = 0;
+    const hide = () => {
+      clearTimeout(timer);
+      target = null;
+      setTip(null);
+    };
+    const over = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
+      const el = (e.target as Element | null)?.closest?.("[title], [data-tip]") as HTMLElement | null;
+      if (el === target) return;
+      hide();
+      if (!el || el instanceof SVGElement) return;
+      const title = el.getAttribute("title");
+      if (title) {
+        el.dataset.tip = title;
+        el.removeAttribute("title");
+      }
+      const text = el.dataset.tip;
+      if (!text) return;
+      target = el;
+      timer = window.setTimeout(() => {
+        if (target !== el || !el.isConnected) return;
+        const r = el.getBoundingClientRect();
+        const above = r.bottom + 40 > innerHeight;
+        const x = Math.min(Math.max(r.left + r.width / 2, 120), innerWidth - 120);
+        setTip({ text, x, y: above ? r.top - 6 : r.bottom + 6, above });
+      }, 350);
+    };
+    document.addEventListener("pointerover", over);
+    document.addEventListener("pointerdown", hide, true);
+    addEventListener("scroll", hide, true);
+    addEventListener("blur", hide);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerover", over);
+      document.removeEventListener("pointerdown", hide, true);
+      removeEventListener("scroll", hide, true);
+      removeEventListener("blur", hide);
+    };
+  }, []);
+  if (!tip) return null;
+  return createPortal(
+    <div className="tip" role="tooltip" style={{ left: tip.x, top: tip.y, transform: tip.above ? "translate(-50%, -100%)" : undefined }}>{tip.text}</div>,
+    document.body,
   );
 }
 
@@ -257,8 +343,8 @@ export function PasswordField({ label, value, onChange, hint, generate, autoComp
   );
 }
 
-// SubNav is the bar under a page's heading, as in EPS: the way back, a short
-// rule, then the page's sub-pages, the open one underlined in the accent colour.
+// SubNav is the segmented track under a page's heading: the way back, a
+// short rule, then the page's sub-pages, the open one a raised tile.
 export function SubNav({ back, backLabel, base, items, current }: {
   back: string;
   backLabel: string;

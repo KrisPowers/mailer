@@ -1,21 +1,24 @@
 /* The webmail, on the shared dashboard style: the folder sidebar, then the
    list of messages and the one being read or written side by side, each on
-   its own filled card that scrolls on its own. */
+   its own panel that scrolls on its own. */
 
 .grow { flex: 1; min-width: 0; }
 
 /* ---- sidebar ---- */
 .compose-btn {
-  display: inline-flex; align-items: center; gap: 12px; height: 56px; margin: 0 0 16px; padding: 0 24px 0 18px;
-  border: 0; border-radius: 16px; background: var(--accent-bg); color: var(--on-accent-bg); font: 500 14px var(--font);
-  cursor: pointer; box-shadow: 0 1px 2px light-dark(rgba(60, 64, 67, .2), rgba(0, 0, 0, .4)); transition: box-shadow .15s, background .15s;
+  display: flex; align-items: center; gap: 12px; flex-shrink: 0; height: 40px; margin: 0 0 10px; padding: 0 12px;
+  border: 0; border-radius: var(--radius); background: var(--accent); color: var(--on-accent); font: 500 13.5px var(--font);
+  white-space: nowrap; cursor: pointer; transition: background .12s;
 }
-.compose-btn:hover { box-shadow: var(--shadow); }
-.compose-btn:disabled { opacity: .5; cursor: default; box-shadow: none; }
+.compose-btn:hover { background: color-mix(in srgb, var(--accent) 86%, #000000); }
+.compose-btn:disabled { cursor: default; background: var(--btn); color: var(--text-3); }
 .nav-button { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
-.nav-form { padding: 4px 8px 4px 16px; }
-.nav-form .input { width: 100%; height: 36px; }
-.nav-heading { margin: 16px 0 6px; padding: 0 20px; color: var(--text-2); font-size: 12px; font-weight: 500; }
+.nav-form { padding: 4px 0; }
+.nav-form .input { width: 100%; height: 34px; }
+.nav-heading { margin: 14px 0 4px; padding: 0 12px; color: var(--text-3); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+/* Folded to icons: New message keeps its icon, the headings and the new folder field give way. */
+.app.rail .compose-btn { justify-content: center; padding: 0; }
+.app.rail .nav-heading, .app.rail .nav-form { display: none; }
 .nav-item.drop { background: var(--accent-bg); color: var(--on-accent-bg); box-shadow: inset 0 0 0 2px var(--accent); }
 .cat-dot { display: inline-block; width: 12px; height: 12px; margin: 0 4px; border-radius: 4px; flex-shrink: 0; }
 .cat-dot.big { width: 20px; height: 20px; margin: 0; border-radius: 6px; }
@@ -23,16 +26,16 @@
 /* ---- the two panes ---- */
 .mailbox {
   display: grid; grid-template-columns: minmax(300px, 420px) minmax(0, 1fr); gap: 16px;
-  height: calc(100vh - var(--head)); padding: 8px 0 16px; min-width: 0;
+  height: calc(100vh - var(--head)); padding: 16px; min-width: 0;
 }
 .list, .pane {
   display: flex; flex-direction: column; min-height: 0; min-width: 0; overflow: hidden;
-  border-radius: var(--card-round); background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--card-round); background: var(--card);
 }
 .list .filters { margin: 0 16px 8px; }
 .list-head { display: flex; align-items: center; gap: 8px; padding: 16px 12px 8px 20px; }
 .list-title { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.list-title h1 { overflow: hidden; font-size: 20px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.list-title h1 { overflow: hidden; font-size: 18px; font-weight: 600; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
 .list-title .muted { font-size: 12px; }
 .list-tools { display: flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 12px 4px 14px; border-bottom: 1px solid var(--line); }
 .list-hint { margin-left: 8px; font-size: 12px; }
@@ -93,7 +96,7 @@
 .back-btn { display: none; }
 .reader-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding: 16px 24px 24px; overflow-y: auto; }
 .reader-scroll > .callout { margin: 0; }
-.reader-subject { font-size: 22px; font-weight: 400; line-height: 1.3; overflow-wrap: anywhere; }
+.reader-subject { font-size: 20px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 .reader-from { display: flex; align-items: flex-start; gap: 14px; }
 .reader-people { flex: 1; min-width: 0; display: grid; gap: 2px; overflow-wrap: anywhere; }
 .reader-people b { font-weight: 500; }
@@ -117,7 +120,7 @@ a.file:hover { background: var(--hover); text-decoration: none; }
 .compose { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .compose > .callout { margin: 0 16px 8px; }
 .compose-head { display: flex; align-items: center; gap: 12px; padding: 12px 12px 8px 20px; }
-.compose-head h2 { font-size: 18px; font-weight: 400; }
+.compose-head h2 { font-size: 16px; font-weight: 600; }
 .compose-head .muted { font-size: 12px; }
 .compose-fields { padding: 0 16px; }
 .field-row { position: relative; display: flex; align-items: center; gap: 12px; min-height: 44px; border-bottom: 1px solid var(--line); }
@@ -167,7 +170,9 @@ a.file:hover { background: var(--hover); text-decoration: none; }
 
 /* ---- narrow windows: one pane at a time ---- */
 @media (max-width: 900px) {
-  .mailbox { grid-template-columns: minmax(0, 1fr); height: calc(100vh - var(--head)); padding: 0 8px 8px; }
+  .mailbox { grid-template-columns: minmax(0, 1fr); height: calc(100vh - var(--head)); padding: 8px; }
+  .app.rail .compose-btn { justify-content: flex-start; padding: 0 12px; }
+  .app.rail .nav-heading, .app.rail .nav-form { display: block; }
   .mailbox.reading .list, .mailbox:not(.reading) .pane { display: none; }
   .back-btn { display: inline-grid; }
   .reader-scroll { padding: 12px 16px 16px; }

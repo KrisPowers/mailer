@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent as KeyEvent } from "react";
 import { Icon, type IconName } from "../../shared/Icon";
-import { Callout, MoreMenu, Notices } from "../../shared/ui";
+import { Callout, MoreMenu, Notices, Tooltips, useNav } from "../../shared/ui";
 import { AccountPage, Accounts, NewAccount } from "./Accounts";
 import { api } from "./api";
 import { Flagged } from "./Flagged";
@@ -27,6 +27,7 @@ export function App() {
           <Dashboard />
         </OverviewProvider>
       </Gate>
+      <Tooltips />
     </Notices>
   );
 }
@@ -36,16 +37,16 @@ const signOut = async () => {
   signedOut();
 };
 
-// Dashboard is the frame every page sits in: a header with the name, the
-// search bar, and new account, help and settings; a sidebar with the pages;
-// and the page.
+// Dashboard is the frame every page sits in: a header with the menu, the
+// name, the search bar and who is signed in; a sidebar with the pages, Help
+// and Settings at its foot; and the page.
 function Dashboard() {
   const { ov, error } = useOverview();
   const user = useUser();
   const admin = user?.role === "admin";
   const [place, setPlace] = useState(readHash);
   const [accounts, setAccounts] = useState<Account[] | null>(null);
-  const [drawer, setDrawer] = useState(false);
+  const { drawer, setDrawer, rail, menu } = useNav();
   const sentToSetup = useRef(false);
 
   const loadAccounts = useCallback(async () => {
@@ -70,7 +71,7 @@ function Dashboard() {
     };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
-  }, []);
+  }, [setDrawer]);
 
   // Until setup is done, the first visit of a browser session opens it.
   useEffect(() => {
@@ -95,19 +96,16 @@ function Dashboard() {
   };
 
   return (
-    <div className="app">
+    <div className={"app" + (rail ? " rail" : "")}>
       <header className="header">
         <div className="header-start">
-          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer} onClick={() => setDrawer((d) => !d)}>
+          <button type="button" className="icon-btn menu-btn" aria-label="Menu" aria-expanded={drawer || !rail} onClick={menu}>
             <Icon name="menu" />
           </button>
-          <a className="brand" href="#/"><span className="brand-mark"><Icon name="mail" size={20} /></span><span className="brand-name">Mailer</span></a>
+          <a className="brand" href="#/"><span className="brand-mark"><Icon name="mail" size={18} /></span><span className="brand-name">Mailer</span></a>
         </div>
         <Search accounts={accounts} admin={admin} />
         <div className="header-actions">
-          <a className={"icon-btn" + (view === "new" ? " on" : "")} href="#/new" aria-label="New account" title="New account"><Icon name="add" /></a>
-          <a className={"icon-btn" + (view === "help" ? " on" : "")} href="#/help" aria-label="Help" title="Help"><Icon name="help" /></a>
-          <a className={"icon-btn" + (view === "settings" ? " on" : "")} href="#/settings" aria-label="Settings" title="Settings"><Icon name="settings" /></a>
           {user && (
             <MoreMenu label={`Signed in as ${user.name}`} icon="person" actions={[
               { label: `${user.name}, ${admin ? "admin" : "user"}`, icon: "person", disabled: true, onClick: () => {} },
@@ -122,33 +120,31 @@ function Dashboard() {
         <nav className={"sidebar" + (drawer ? " open" : "")} aria-label="Pages">
           {sections ? (
             <>
-              <a className="nav-back" href="#/"><Icon name="arrow_back" /><span>Dashboard</span></a>
-              <hr className="nav-rule" />
+              <a className="nav-back" href="#/" title={rail ? "Back" : undefined}><Icon name="arrow_back" /><span className="nav-label">Back</span></a>
               {sections.map(([key, label, icon], i) => (
-                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet />
+                <NavItem key={key} to={`#/${view}/${key}`} icon={icon} label={label} on={id === key || (!id && i === 0)} quiet rail={rail} />
               ))}
             </>
           ) : (
             <>
-              {setupStep(ov) > 0 && <NavItem to="#/setup" icon="build" label="Finish setup" on={view === "setup"} />}
-              <NavItem to="#/" icon="group" label="Accounts" on={view === "accounts" || view === "new"} count={accounts?.length} />
-              <NavItem to="#/traffic" icon="outbox" label="Traffic" on={view === "traffic"} count={ov?.queue || undefined} alert />
-              <NavItem to="#/flagged" icon="flag" label="Flagged" on={view === "flagged"} count={ov?.flagged || undefined} />
-              <NavItem to="#/status" icon="lan" label="Status" on={view === "status"} count={problems || undefined} alert />
-              <NavItem to="#/logs" icon="terminal" label="Logs" on={view === "logs"} />
-              {admin && (
-                <>
-                  <hr className="nav-rule" />
-                  <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={ov?.pending_devices || undefined} alert />
-                  <NavItem to="#/people" icon="shield" label="People" on={view === "people"} />
-                </>
-              )}
+              {setupStep(ov) > 0 && <NavItem to="#/setup" icon="build" label="Finish setup" on={view === "setup"} rail={rail} />}
+              <NavItem to="#/" icon="group" label="Accounts" on={view === "accounts" || view === "new"} rail={rail} />
+              <NavItem to="#/traffic" icon="outbox" label="Traffic" on={view === "traffic"} count={ov?.queue || undefined} rail={rail} />
+              <NavItem to="#/flagged" icon="flag" label="Flagged" on={view === "flagged"} count={ov?.flagged || undefined} rail={rail} />
+              <NavItem to="#/status" icon="lan" label="Status" on={view === "status"} count={problems || undefined} rail={rail} />
+              <NavItem to="#/logs" icon="terminal" label="Logs" on={view === "logs"} rail={rail} />
+              {admin && <NavItem to="#/devices" icon="devices" label="Devices" on={view === "devices"} count={ov?.pending_devices || undefined} rail={rail} />}
+              {admin && <NavItem to="#/people" icon="shield" label="People" on={view === "people"} rail={rail} />}
             </>
           )}
+          <span className="nav-gap" />
+          <NavItem to="#/help" icon="help" label="Help" on={view === "help"} rail={rail} />
+          <NavItem to="#/settings" icon="settings" label="Settings" on={view === "settings"} rail={rail} />
         </nav>
         {drawer && <div className="scrim" onClick={() => setDrawer(false)} />}
 
-        <main className={"page" + (view === "help" ? " wide" : "")} key={view + id}>
+        {/* A new page fades in; a section of the same page changes in place. */}
+        <main className="page" key={view === "accounts" ? view + id : view}>
           {error && !ov && <Callout tone="bad" icon="error">Can't reach the mail server: {error}</Callout>}
           {view === "accounts" && !id && <Accounts accounts={accounts} />}
           {view === "accounts" && id && (account
@@ -171,12 +167,14 @@ function Dashboard() {
   );
 }
 
-function NavItem({ to, icon, label, on, quiet, count, alert }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; alert?: boolean }) {
+// NavItem is a page, or a section of settings or help, in the sidebar; folded
+// to its icon, its name shows on hover.
+function NavItem({ to, icon, label, on, quiet, count, rail }: { to: string; icon: IconName; label: string; on: boolean; quiet?: boolean; count?: number; rail?: boolean }) {
   return (
-    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined}>
+    <a className={"nav-item" + (quiet ? " quiet" : "") + (on ? " on" : "")} href={to} aria-current={on ? "page" : undefined} title={rail ? label : undefined}>
       <Icon name={icon} />
       <span className="nav-label">{label}</span>
-      {count !== undefined && <span className={"nav-count" + (alert ? " alert" : "")}>{count.toLocaleString()}</span>}
+      {count !== undefined && <span className="nav-count">{count.toLocaleString()}</span>}
     </a>
   );
 }
