@@ -29,6 +29,8 @@ export function useRepair() {
       const r = await api.connectCloudflare("", d).catch((err): ConnectResult => ({ error: message(err) }));
       setResults((prev) => [...(prev ?? []), [d, r]]);
     }
+    // Check again now, so what's shown is what the repair left.
+    await api.check().catch(() => undefined);
     setBusy(false);
     await reload();
   };
