@@ -162,25 +162,24 @@ func (s *Setup) Connect(ctx context.Context, zoneName string) ([]Step, error) {
 		return fail("Save settings", err)
 	}
 
-	if err := s.publishAuthRecords(ctx, c, zone.ID, domain); err != nil {
-		return fail("Publish DKIM / DMARC", err)
+	// These don't depend on each other, so one failing doesn't stop the
+	// rest: a repair fixes everything it can in one run.
+	var errs []error
+	step := func(name, detail string, err error) {
+		if err != nil {
+			steps = append(steps, Step{Name: name, Detail: err.Error()})
+			errs = append(errs, fmt.Errorf("%s: %w", name, err))
+			return
+		}
+		done(name, detail)
 	}
-	done("Publish DKIM / DMARC", "")
-
-	if err := s.onboardSending(ctx, c, zone.ID, domain); err != nil {
-		return fail("Turn on Email Sending", fmt.Errorf("%w (Email Sending needs the Workers Paid plan on this Cloudflare account)", err))
+	step("Publish DKIM / DMARC", "", s.publishAuthRecords(ctx, c, zone.ID, domain))
+	step("Turn on Email Sending", "outgoing mail leaves through Cloudflare", s.onboardSending(ctx, c, zone.ID, domain))
+	step("Publish SPF", "", s.syncDomain(ctx, s.Cfg.Get(), domain))
+	step("Publish mail app settings", strings.Join(clientHosts(domain), ", "), s.syncClientHosts(ctx, c, s.Cfg.Get()))
+	if len(errs) > 0 {
+		return steps, errors.Join(errs...)
 	}
-	done("Turn on Email Sending", "outgoing mail leaves through Cloudflare")
-
-	if err := s.syncDomain(ctx, s.Cfg.Get(), domain); err != nil {
-		return fail("Publish SPF", err)
-	}
-	done("Publish SPF", "")
-
-	if err := s.syncClientHosts(ctx, c, s.Cfg.Get()); err != nil {
-		return fail("Publish mail app settings", err)
-	}
-	done("Publish mail app settings", strings.Join(clientHosts(domain), ", "))
 	s.Log.Printf("cloudflare: connected %s", domain)
 	return steps, nil
 }
@@ -417,18 +416,21 @@ func (s *Setup) publishAuthRecords(ctx context.Context, c *Client, zoneID, domai
 	return err
 }
 
-// onboardSending turns on Email Sending for domain and publishes the DNS
-// records it asks for.
+// onboardSending turns on Email Sending for domain, or back on when it was
+// turned off, and publishes the DNS records it asks for.
 func (s *Setup) onboardSending(ctx context.Context, c *Client, zoneID, domain string) error {
+	plan := func(err error) error {
+		return fmt.Errorf("%w (Email Sending needs the Workers Paid plan on this Cloudflare account)", err)
+	}
 	sds, err := c.SendingDomains(ctx, zoneID)
 	if err != nil {
-		return err
+		return plan(err)
 	}
 	var sd *SendingDomain
-	if i := slices.IndexFunc(sds, func(d SendingDomain) bool { return strings.EqualFold(d.Name, domain) }); i >= 0 {
+	if i := slices.IndexFunc(sds, func(d SendingDomain) bool { return strings.EqualFold(d.Name, domain) }); i >= 0 && sds[i].Enabled {
 		sd = &sds[i]
 	} else if sd, err = c.EnableSending(ctx, zoneID, domain); err != nil {
-		return err
+		return plan(err)
 	}
 	recs, err := c.SendingDNS(ctx, zoneID, sd.Tag)
 	if err != nil {
@@ -462,8 +464,13 @@ func publishSendingRecord(ctx context.Context, c *Client, zoneID, domain string,
 		return err
 	}
 	tag := tagOf(r.Content)
+	// Cloudflare asks for hostnames with a trailing dot and stores them
+	// without one.
+	same := func(a, b string) bool {
+		return strings.EqualFold(strings.TrimSuffix(compact(a), "."), strings.TrimSuffix(compact(b), "."))
+	}
 	for _, old := range existing {
-		if compact(unquote(old.Content)) == compact(r.Content) || tag == "v=dmarc1" && tagOf(unquote(old.Content)) == tag {
+		if same(unquote(old.Content), r.Content) || tag == "v=dmarc1" && tagOf(unquote(old.Content)) == tag {
 			return nil
 		}
 	}

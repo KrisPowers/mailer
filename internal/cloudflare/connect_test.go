@@ -119,6 +119,17 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "dns_records" && r.Method == "POST":
 		var rec Record
 		json.NewDecoder(r.Body).Decode(&rec)
+		// Cloudflare stores hostnames without the trailing dot and refuses
+		// a record identical to one it has.
+		if rec.Type != "TXT" {
+			rec.Content = strings.TrimSuffix(rec.Content, ".")
+		}
+		for _, old := range f.records[zone] {
+			if old.Type == rec.Type && old.Name == rec.Name && old.Content == rec.Content {
+				fmt.Fprint(w, `{"success":false,"errors":[{"code":81058,"message":"An identical record already exists."}]}`)
+				return
+			}
+		}
 		f.add(zone, rec)
 		ok(rec)
 	case strings.HasPrefix(rest, "dns_records/") && r.Method == "PUT":
@@ -179,13 +190,18 @@ func (f *fakeCF) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case rest == "email/sending/subdomains" && r.Method == "POST":
 		var body struct{ Name string }
 		json.NewDecoder(r.Body).Decode(&body)
-		sd := SendingDomain{Name: body.Name, Tag: "tag-" + zone, Enabled: true}
-		f.sending[zone] = append(f.sending[zone], sd)
-		ok(sd)
+		// Posting a domain that's already there turns it back on.
+		i := slices.IndexFunc(f.sending[zone], func(d SendingDomain) bool { return d.Name == body.Name })
+		if i < 0 {
+			f.sending[zone] = append(f.sending[zone], SendingDomain{Name: body.Name, Tag: "tag-" + zone})
+			i = len(f.sending[zone]) - 1
+		}
+		f.sending[zone][i].Enabled = true
+		ok(f.sending[zone][i])
 	case rest == "email/sending/subdomains/tag-"+zone+"/dns":
 		name, ten := f.zones[zone], 10
 		ok([]Record{
-			{Type: "MX", Name: "cf-bounce." + name, Content: "route1.mx.cloudflare.net", Priority: &ten},
+			{Type: "MX", Name: "cf-bounce." + name, Content: "route1.mx.cloudflare.net.", Priority: &ten},
 			{Type: "TXT", Name: "cf-bounce." + name, Content: `"v=spf1 include:_spf.mx.cloudflare.net ~all"`},
 			{Type: "TXT", Name: "cf-bounce._domainkey." + name, Content: "v=DKIM1; k=rsa; p=CF"},
 			{Type: "TXT", Name: "_dmarc." + name, Content: "v=DMARC1; p=reject"},
@@ -277,6 +293,18 @@ func TestConnect(t *testing.T) {
 		if steps, err := s.Connect(ctx, zone); err != nil {
 			t.Fatalf("%s: %v %+v", zone, err, steps)
 		}
+	}
+	// One repair undoes every drift at once: mail app names on another
+	// tunnel and Email Sending turned off.
+	for id, r := range fake.records["z1"] {
+		if r.Name == "autodiscover.example.com" {
+			r.Content = "old.cfargotunnel.com"
+			fake.records["z1"][id] = r
+		}
+	}
+	fake.sending["z1"][0].Enabled = false
+	if steps, err := s.Connect(ctx, "example.com"); err != nil {
+		t.Fatalf("repair: %v %+v", err, steps)
 	}
 
 	cfg := cfgm.Get()
